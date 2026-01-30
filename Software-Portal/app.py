@@ -187,6 +187,54 @@ def delete_user(user_id):
     flash('User deleted successfully!', 'success')
     return redirect(url_for('users_list'))
 
+@app.route('/compliance')
+@login_required
+@superuser_required
+def compliance_report():
+    conn = get_db()
+    cursor = conn.cursor()
+    
+    # Get all rooms with their compliance status
+    cursor.execute('''
+        SELECT 
+            r.id as room_id, r.room_name, r.building, r.floor,
+            COUNT(i.id) as total_installations,
+            SUM(CASE WHEN CAST((julianday('now') - julianday(i.last_updated)) AS INTEGER) > ? 
+                AND i.is_long_life = 0 THEN 1 ELSE 0 END) as out_of_policy_count,
+            SUM(CASE WHEN CAST((julianday('now') - julianday(i.last_updated)) AS INTEGER) > ? - 30
+                AND CAST((julianday('now') - julianday(i.last_updated)) AS INTEGER) <= ?
+                AND i.is_long_life = 0 THEN 1 ELSE 0 END) as warning_count,
+            MIN(CASE WHEN i.is_long_life = 0 
+                THEN CAST((julianday('now') - julianday(i.last_updated)) AS INTEGER) END) as oldest_update_days
+        FROM rooms r
+        LEFT JOIN installations i ON r.id = i.room_id
+        GROUP BY r.id
+        HAVING total_installations > 0
+        ORDER BY out_of_policy_count DESC, warning_count DESC, oldest_update_days DESC
+    ''', (UPDATE_POLICY_DAYS, UPDATE_POLICY_DAYS, UPDATE_POLICY_DAYS))
+    rooms = cursor.fetchall()
+    
+    # Get detailed breakdown for each room
+    room_details = {}
+    for room in rooms:
+        cursor.execute('''
+            SELECT 
+                s.software_name, s.vendor, i.installed_version, i.last_updated,
+                CAST((julianday('now') - julianday(i.last_updated)) AS INTEGER) as days_since_update,
+                i.is_long_life, i.long_life_reason, i.updated_by
+            FROM installations i
+            JOIN software s ON i.software_id = s.id
+            WHERE i.room_id = ?
+            AND (CAST((julianday('now') - julianday(i.last_updated)) AS INTEGER) > ? - 30
+                 OR i.is_long_life = 1)
+            ORDER BY days_since_update DESC
+        ''', (room['room_id'], UPDATE_POLICY_DAYS))
+        room_details[room['room_id']] = cursor.fetchall()
+    
+    conn.close()
+    return render_template('compliance_report.html', rooms=rooms, room_details=room_details, 
+                          update_policy_days=UPDATE_POLICY_DAYS)
+
 @app.route('/')
 @login_required
 def index():

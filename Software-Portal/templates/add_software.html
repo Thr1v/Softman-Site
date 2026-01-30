@@ -16,6 +16,7 @@
             <li><a href="{{ url_for('software_list') }}" class="active">Software</a></li>
             <li><a href="{{ url_for('rooms_list') }}">Rooms</a></li>
             {% if current_user.is_superuser %}
+            <li><a href="{{ url_for('compliance_report') }}">Compliance</a></li>
             <li><a href="{{ url_for('users_list') }}">Users</a></li>
             {% endif %}
             <li class="user-info">

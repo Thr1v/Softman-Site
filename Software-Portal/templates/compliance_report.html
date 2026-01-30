@@ -1,0 +1,183 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Compliance Report - Software Management Portal</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+    <style>
+        .compliance-card {
+            background: white;
+            border-radius: 10px;
+            padding: 1.5rem;
+            margin-bottom: 1.5rem;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+        }
+        .compliance-card.critical {
+            border-left: 5px solid #dc3545;
+        }
+        .compliance-card.warning {
+            border-left: 5px solid #ffc107;
+        }
+        .compliance-card.good {
+            border-left: 5px solid #28a745;
+        }
+        .room-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 1rem;
+            cursor: pointer;
+        }
+        .room-header h3 {
+            margin: 0;
+            color: #333;
+        }
+        .room-stats {
+            display: flex;
+            gap: 1rem;
+            font-size: 0.9rem;
+        }
+        .software-details {
+            margin-top: 1rem;
+            display: none;
+        }
+        .software-details.show {
+            display: block;
+        }
+        .software-item {
+            background: #f8f9fa;
+            padding: 0.75rem;
+            margin-bottom: 0.5rem;
+            border-radius: 5px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        .software-item.critical {
+            background: #f8d7da;
+        }
+        .software-item.warning {
+            background: #fff3cd;
+        }
+    </style>
+</head>
+<body>
+    <nav class="navbar">
+        <div class="nav-brand">
+            <h1>🖥️ Software Management Portal</h1>
+        </div>
+        <ul class="nav-menu">
+            <li><a href="{{ url_for('index') }}">Dashboard</a></li>
+            <li><a href="{{ url_for('software_list') }}">Software</a></li>
+            <li><a href="{{ url_for('rooms_list') }}">Rooms</a></li>
+            {% if current_user.is_superuser %}
+            <li><a href="{{ url_for('compliance_report') }}" class="active">Compliance</a></li>
+            <li><a href="{{ url_for('users_list') }}">Users</a></li>
+            {% endif %}
+            <li class="user-info">
+                {{ current_user.username }}
+                {% if current_user.is_superuser %}
+                <span class="badge badge-admin">Admin</span>
+                {% endif %}
+            </li>
+            <li><a href="{{ url_for('logout') }}" class="btn-sm btn-secondary">Logout</a></li>
+        </ul>
+    </nav>
+
+    <div class="container">
+        <div class="page-header">
+            <h2>📊 Compliance Report by Room</h2>
+            <div class="header-stats">
+                <div class="stat-card warning">
+                    <div class="stat-value">{{ rooms|selectattr('out_of_policy_count', 'gt', 0)|list|length }}</div>
+                    <div class="stat-label">Rooms Out of Policy</div>
+                </div>
+                <div class="stat-card info">
+                    <div class="stat-value">{{ update_policy_days }}</div>
+                    <div class="stat-label">Day Policy Window</div>
+                </div>
+            </div>
+        </div>
+
+        {% if rooms %}
+            {% for room in rooms %}
+                {% set status = 'critical' if room.out_of_policy_count > 0 else ('warning' if room.warning_count > 0 else 'good') %}
+                <div class="compliance-card {{ status }}">
+                    <div class="room-header" onclick="toggleDetails({{ room.room_id }})">
+                        <div>
+                            <h3>📍 {{ room.room_name }}</h3>
+                            <p style="color: #666; margin: 0.25rem 0 0 0;">
+                                {% if room.building %}{{ room.building }}{% endif %}
+                                {% if room.floor %} - {{ room.floor }}{% endif %}
+                            </p>
+                        </div>
+                        <div class="room-stats">
+                            <span class="badge badge-info">{{ room.total_installations }} Total</span>
+                            {% if room.out_of_policy_count > 0 %}
+                            <span class="badge badge-danger">{{ room.out_of_policy_count }} Out of Policy</span>
+                            {% endif %}
+                            {% if room.warning_count > 0 %}
+                            <span class="badge badge-warning">{{ room.warning_count }} Near Policy Limit</span>
+                            {% endif %}
+                            {% if room.oldest_update_days %}
+                            <span class="badge {% if room.oldest_update_days > update_policy_days %}badge-danger{% else %}badge-info{% endif %}">
+                                Oldest: {{ room.oldest_update_days }} days
+                            </span>
+                            {% endif %}
+                            <span style="color: #999;">▼</span>
+                        </div>
+                    </div>
+                    
+                    <div id="details-{{ room.room_id }}" class="software-details">
+                        {% if room.room_id in room_details and room_details[room.room_id] %}
+                            {% for software in room_details[room.room_id] %}
+                                {% set item_status = 'critical' if software.days_since_update > update_policy_days and not software.is_long_life else ('warning' if software.days_since_update > update_policy_days - 30 else '') %}
+                                <div class="software-item {{ item_status }}">
+                                    <div>
+                                        <strong>{{ software.software_name }}</strong>
+                                        {% if software.vendor %}<span style="color: #666;"> - {{ software.vendor }}</span>{% endif %}
+                                        <br>
+                                        <small style="color: #666;">
+                                            Version: {{ software.installed_version }} | 
+                                            Last Updated: {{ software.last_updated[:10] if software.last_updated else 'Unknown' }} 
+                                            {% if software.updated_by %}by {{ software.updated_by }}{% endif %}
+                                        </small>
+                                    </div>
+                                    <div style="text-align: right;">
+                                        {% if software.is_long_life %}
+                                        <span class="badge badge-info" title="{{ software.long_life_reason }}">Long-Life Exception</span>
+                                        {% elif software.days_since_update > update_policy_days %}
+                                        <span class="badge badge-danger">{{ software.days_since_update }} days (OUT OF POLICY)</span>
+                                        {% elif software.days_since_update > update_policy_days - 30 %}
+                                        <span class="badge badge-warning">{{ software.days_since_update }} days ({{ update_policy_days - software.days_since_update }} days until limit)</span>
+                                        {% endif %}
+                                    </div>
+                                </div>
+                            {% endfor %}
+                            <div style="margin-top: 1rem;">
+                                <a href="{{ url_for('room_details', room_id=room.room_id) }}" class="btn-sm btn-primary">View Full Room Details</a>
+                            </div>
+                        {% else %}
+                            <p style="color: #999;">All software in this room is compliant.</p>
+                        {% endif %}
+                    </div>
+                </div>
+            {% endfor %}
+        {% else %}
+            <div class="compliance-card good">
+                <p style="text-align: center; color: #28a745; font-size: 1.2rem; margin: 2rem 0;">
+                    ✓ All rooms are fully compliant!
+                </p>
+            </div>
+        {% endif %}
+    </div>
+
+    <script>
+        function toggleDetails(roomId) {
+            const details = document.getElementById('details-' + roomId);
+            details.classList.toggle('show');
+        }
+    </script>
+</body>
+</html>
