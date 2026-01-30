@@ -125,6 +125,68 @@ def logout():
     flash('You have been logged out.', 'success')
     return redirect(url_for('login'))
 
+@app.route('/users')
+@login_required
+@superuser_required
+def users_list():
+    conn = get_db()
+    cursor = conn.cursor()
+    cursor.execute('''
+        SELECT id, username, full_name, email, is_superuser, created_at, last_login 
+        FROM users 
+        ORDER BY username
+    ''')
+    users = cursor.fetchall()
+    conn.close()
+    return render_template('users_list.html', users=users)
+
+@app.route('/users/add', methods=['GET', 'POST'])
+@login_required
+@superuser_required
+def add_user():
+    if request.method == 'POST':
+        username = request.form['username']
+        password = request.form['password']
+        full_name = request.form.get('full_name', '')
+        email = request.form.get('email', '')
+        is_superuser = 1 if request.form.get('is_superuser') else 0
+        
+        password_hash = generate_password_hash(password)
+        
+        conn = get_db()
+        cursor = conn.cursor()
+        try:
+            cursor.execute('''
+                INSERT INTO users (username, password_hash, full_name, email, is_superuser) 
+                VALUES (?, ?, ?, ?, ?)
+            ''', (username, password_hash, full_name, email, is_superuser))
+            conn.commit()
+            flash(f'User {username} created successfully!', 'success')
+            return redirect(url_for('users_list'))
+        except sqlite3.IntegrityError:
+            flash('Username already exists!', 'error')
+        finally:
+            conn.close()
+    
+    return render_template('add_user.html')
+
+@app.route('/users/<int:user_id>/delete', methods=['POST'])
+@login_required
+@superuser_required
+def delete_user(user_id):
+    if user_id == current_user.id:
+        flash('You cannot delete your own account!', 'error')
+        return redirect(url_for('users_list'))
+    
+    conn = get_db()
+    cursor = conn.cursor()
+    cursor.execute('DELETE FROM users WHERE id = ?', (user_id,))
+    conn.commit()
+    conn.close()
+    
+    flash('User deleted successfully!', 'success')
+    return redirect(url_for('users_list'))
+
 @app.route('/')
 @login_required
 def index():
@@ -278,9 +340,41 @@ def rooms_list():
         FROM rooms r LEFT JOIN installations i ON r.id = i.room_id
         GROUP BY r.id ORDER BY r.room_name
     ''')
-    rooms = [dict(row) for row in cursor.fetchall()]
+    rooms = cursor.fetchall()
     conn.close()
     return render_template('rooms_list.html', rooms=rooms)
+
+@app.route('/rooms/<int:room_id>')
+@login_required
+def room_details(room_id):
+    conn = get_db()
+    cursor = conn.cursor()
+    
+    # Get room info
+    cursor.execute('SELECT * FROM rooms WHERE id = ?', (room_id,))
+    room = cursor.fetchone()
+    
+    if not room:
+        flash('Room not found!', 'error')
+        return redirect(url_for('rooms_list'))
+    
+    # Get all software installed in this room
+    cursor.execute('''
+        SELECT 
+            i.id as installation_id, s.id as software_id, s.software_name, s.vendor,
+            i.installed_version, s.version as latest_version, i.last_updated, 
+            i.updated_by, i.is_long_life, i.long_life_reason,
+            CAST((julianday('now') - julianday(i.last_updated)) AS INTEGER) as days_since_update
+        FROM installations i
+        JOIN software s ON i.software_id = s.id
+        WHERE i.room_id = ?
+        ORDER BY s.software_name
+    ''', (room_id,))
+    installations = cursor.fetchall()
+    
+    conn.close()
+    return render_template('room_details.html', room=room, installations=installations, update_policy_days=UPDATE_POLICY_DAYS)
+
 
 @app.route('/rooms/add', methods=['POST'])
 @superuser_required

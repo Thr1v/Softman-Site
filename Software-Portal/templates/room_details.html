@@ -1,0 +1,168 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{{ room.room_name }} - Software Management Portal</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+    <nav class="navbar">
+        <div class="nav-brand">
+            <h1>🖥️ Software Management Portal</h1>
+        </div>
+        <ul class="nav-menu">
+            <li><a href="{{ url_for('index') }}">Dashboard</a></li>
+            <li><a href="{{ url_for('software_list') }}">Software</a></li>
+            <li><a href="{{ url_for('rooms_list') }}">Rooms</a></li>
+            {% if current_user.is_superuser %}
+            <li><a href="{{ url_for('users_list') }}">Users</a></li>
+            {% endif %}
+            <li class="user-info">
+                {{ current_user.username }}
+                {% if current_user.is_superuser %}
+                <span class="badge badge-admin">Admin</span>
+                {% endif %}
+            </li>
+            <li><a href="{{ url_for('logout') }}" class="btn-sm btn-secondary">Logout</a></li>
+        </ul>
+    </nav>
+
+    <div class="container">
+        {% with messages = get_flashed_messages(with_categories=true) %}
+            {% if messages %}
+                {% for category, message in messages %}
+                <div class="alert alert-{{ category }}">{{ message }}</div>
+                {% endfor %}
+            {% endif %}
+        {% endwith %}
+
+        <div class="page-header">
+            <div>
+                <h2>📍 {{ room.room_name }}</h2>
+                <p style="color: #666; margin-top: 0.5rem;">
+                    {% if room.building %}{{ room.building }}{% endif %}
+                    {% if room.floor %} - {{ room.floor }}{% endif %}
+                </p>
+            </div>
+            <a href="{{ url_for('rooms_list') }}" class="btn btn-secondary">← Back to Rooms</a>
+        </div>
+
+        <div class="table-container">
+            <table class="data-table">
+                <thead>
+                    <tr>
+                        <th>Software</th>
+                        <th>Vendor</th>
+                        <th>Installed Version</th>
+                        <th>Latest Version</th>
+                        <th>Last Updated</th>
+                        <th>Days Since Update</th>
+                        <th>Compliance Status</th>
+                        <th>Updated By</th>
+                        {% if current_user.is_superuser %}
+                        <th>Actions</th>
+                        {% endif %}
+                    </tr>
+                </thead>
+                <tbody>
+                    {% if installations %}
+                        {% for inst in installations %}
+                        <tr {% if inst.days_since_update > update_policy_days and not inst.is_long_life %}class="row-warning"{% endif %}>
+                            <td><strong>{{ inst.software_name }}</strong></td>
+                            <td>{{ inst.vendor or '-' }}</td>
+                            <td>{{ inst.installed_version }}</td>
+                            <td>
+                                {% if inst.installed_version != inst.latest_version %}
+                                <span class="badge badge-warning">{{ inst.latest_version }}</span>
+                                {% else %}
+                                {{ inst.latest_version }}
+                                {% endif %}
+                            </td>
+                            <td>{{ inst.last_updated[:10] if inst.last_updated else 'N/A' }}</td>
+                            <td>
+                                {% if inst.days_since_update > update_policy_days %}
+                                <span class="badge badge-danger">{{ inst.days_since_update }} days</span>
+                                {% else %}
+                                {{ inst.days_since_update }} days
+                                {% endif %}
+                            </td>
+                            <td>
+                                {% if inst.is_long_life %}
+                                <span class="badge badge-info">Long-Life Exception</span>
+                                {% elif inst.days_since_update > update_policy_days %}
+                                <span class="badge badge-danger">⚠️ Out of Policy</span>
+                                {% else %}
+                                <span class="badge badge-success">✓ Compliant</span>
+                                {% endif %}
+                            </td>
+                            <td>{{ inst.updated_by or '-' }}</td>
+                            {% if current_user.is_superuser %}
+                            <td>
+                                <div class="action-buttons">
+                                    <form method="post" action="{{ url_for('update_installation', installation_id=inst.installation_id) }}" style="display:inline;">
+                                        <button type="submit" class="btn-sm btn-success">Update Now</button>
+                                    </form>
+                                    {% if inst.is_long_life %}
+                                    <span class="badge badge-info" title="{{ inst.long_life_reason }}">Exception</span>
+                                    {% else %}
+                                    <button class="btn-sm btn-warning" onclick="setLongLife({{ inst.installation_id }}, '{{ inst.software_name }}')">Grant Exception</button>
+                                    {% endif %}
+                                    <form method="post" action="{{ url_for('delete_installation', installation_id=inst.installation_id) }}" style="display:inline;" onsubmit="return confirm('Delete {{ inst.software_name }} installation?');">
+                                        <button type="submit" class="btn-sm btn-danger">Delete</button>
+                                    </form>
+                                </div>
+                            </td>
+                            {% endif %}
+                        </tr>
+                        {% endfor %}
+                    {% else %}
+                        <tr>
+                            <td colspan="{% if current_user.is_superuser %}9{% else %}8{% endif %}" class="text-center">
+                                No software installed in this room yet.
+                            </td>
+                        </tr>
+                    {% endif %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+    <!-- Long-Life Exception Modal -->
+    <div id="longLifeModal" class="modal">
+        <div class="modal-content">
+            <span class="close" onclick="closeModal('longLifeModal')">&times;</span>
+            <h2>Grant Long-Life Exception</h2>
+            <form method="post" id="longLifeForm">
+                <div class="form-group">
+                    <label>Software:</label>
+                    <input type="text" id="longlife_software_name" readonly>
+                </div>
+                <div class="form-group">
+                    <label>Reason for Exception:</label>
+                    <textarea name="reason" rows="3" required placeholder="Explain why this software requires a long-life exception..."></textarea>
+                </div>
+                <button type="submit" class="btn btn-warning">Grant Exception</button>
+            </form>
+        </div>
+    </div>
+
+    <script>
+        function closeModal(modalId) {
+            document.getElementById(modalId).style.display = 'none';
+        }
+
+        function setLongLife(installationId, softwareName) {
+            document.getElementById('longlife_software_name').value = softwareName;
+            document.getElementById('longLifeForm').action = `/installation/${installationId}/long-life`;
+            document.getElementById('longLifeModal').style.display = 'block';
+        }
+
+        window.onclick = function(event) {
+            if (event.target.classList.contains('modal')) {
+                event.target.style.display = 'none';
+            }
+        }
+    </script>
+</body>
+</html>

@@ -283,6 +283,11 @@ body {
     color: white;
 }
 
+.badge-admin {
+    background: #dc3545;
+    color: white;
+}
+
 .badge-priority-low {
     background: #e0e0e0;
     color: #333;

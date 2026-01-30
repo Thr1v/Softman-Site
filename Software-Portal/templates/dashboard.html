@@ -3,20 +3,23 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Software Management Portal - Dashboard</title>
+    <title>isitSoft - Dashboard</title>
     <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
 </head>
 <body>
     <nav class="navbar">
         <div class="nav-brand">
-            <h1>🖥️ Software Management Portal</h1>
+            <h1>🖥️ isitSoft</h1>
         </div>
         <ul class="nav-menu">
             <li><a href="{{ url_for('index') }}" class="active">Dashboard</a></li>
             <li><a href="{{ url_for('software_list') }}">Software</a></li>
             <li><a href="{{ url_for('rooms_list') }}">Rooms</a></li>
+            {% if current_user.is_superuser %}
+            <li><a href="{{ url_for('users_list') }}">Users</a></li>
+            {% endif %}
             <li class="user-info">
-                👤 {{ current_user.full_name }}
+                {{ current_user.username }}
                 {% if current_user.is_superuser %}<span class="badge badge-admin">Admin</span>{% endif %}
             </li>
             <li><a href="{{ url_for('logout') }}">Logout</a></li>

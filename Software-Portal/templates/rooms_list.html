@@ -15,6 +15,9 @@
             <li><a href="{{ url_for('index') }}">Dashboard</a></li>
             <li><a href="{{ url_for('software_list') }}">Software</a></li>
             <li><a href="{{ url_for('rooms_list') }}" class="active">Rooms</a></li>
+            {% if current_user.is_superuser %}
+            <li><a href="{{ url_for('users_list') }}">Users</a></li>
+            {% endif %}
             <li class="user-info">
                 {{ current_user.username }}
                 {% if current_user.is_superuser %}
@@ -40,7 +43,7 @@
                 <p><strong>Building:</strong> {{ room.building or 'N/A' }}</p>
                 <p><strong>Floor:</strong> {{ room.floor or 'N/A' }}</p>
                 <p><strong>Software Installed:</strong> {{ room.software_count }}</p>
-                <a href="{{ url_for('index', room=room.room_name) }}" class="btn-sm btn-primary">View Installations</a>
+                <a href="{{ url_for('room_details', room_id=room.id) }}" class="btn-sm btn-primary">View Installations</a>
                 {% if current_user.is_superuser %}
                 <form method="post" action="{{ url_for('delete_room', room_id=room.id) }}" style="display:inline; margin-left:8px;" onsubmit="return confirm('Delete {{ room.room_name }}? This will fail if installations exist.');">
                     <button type="submit" class="btn-sm btn-danger">Delete</button>
