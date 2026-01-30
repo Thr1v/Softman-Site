@@ -1,5 +1,17 @@
 -- Software Management Portal Database Schema
 
+-- Users Table
+CREATE TABLE IF NOT EXISTS users (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    username TEXT NOT NULL UNIQUE,
+    password_hash TEXT NOT NULL,
+    full_name TEXT,
+    email TEXT,
+    is_superuser BOOLEAN DEFAULT 0,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    last_login TIMESTAMP
+);
+
 -- Rooms/Locations Table
 CREATE TABLE IF NOT EXISTS rooms (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -92,6 +104,11 @@ CREATE INDEX IF NOT EXISTS idx_update_requests_software ON update_requests(softw
 CREATE INDEX IF NOT EXISTS idx_update_requests_room ON update_requests(room_id);
 
 -- Insert some sample data
+INSERT INTO users (username, password_hash, full_name, is_superuser) VALUES 
+    ('admin', 'pbkdf2:sha256:260000$salt$hash', 'Administrator', 1),
+    ('user', 'pbkdf2:sha256:260000$salt$hash', 'Regular User', 0);
+-- Note: Default password for both is 'password' - CHANGE THIS!
+
 INSERT INTO rooms (room_name, building, floor) VALUES 
     ('Lab 101', 'Main Building', '1'),
     ('Lab 102', 'Main Building', '1'),

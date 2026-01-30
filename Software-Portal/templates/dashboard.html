@@ -15,12 +15,11 @@
             <li><a href="{{ url_for('index') }}" class="active">Dashboard</a></li>
             <li><a href="{{ url_for('software_list') }}">Software</a></li>
             <li><a href="{{ url_for('rooms_list') }}">Rooms</a></li>
-            <li><a href="{{ url_for('update_requests') }}">
-                Updates 
-                {% if pending_count > 0 %}
-                <span class="badge">{{ pending_count }}</span>
-                {% endif %}
-            </a></li>
+            <li class="user-info">
+                👤 {{ current_user.full_name }}
+                {% if current_user.is_superuser %}<span class="badge badge-admin">Admin</span>{% endif %}
+            </li>
+            <li><a href="{{ url_for('logout') }}">Logout</a></li>
         </ul>
     </nav>
 
@@ -45,8 +44,8 @@
                     <div class="stat-label">Policy Violations</div>
                 </div>
                 <div class="stat-card info">
-                    <div class="stat-value">{{ pending_count }}</div>
-                    <div class="stat-label">Pending Updates</div>
+                    <div class="stat-value">{{ installations|selectattr('needs_update', 'equalto', True)|list|length }}</div>
+                    <div class="stat-label">Updates Available</div>
                 </div>
             </div>
         </div>
@@ -152,28 +151,38 @@
                         </td>
                         <td>
                             <div class="action-buttons">
-                                {% if inst.needs_update %}
-                                <button class="btn-sm btn-primary" onclick="createUpdateRequest({{ inst.installation_id }}, '{{ inst.software_name }}', '{{ inst.room_name }}')">
-                                    Request Update
-                                </button>
+                                {% if current_user.is_superuser and inst.needs_update %}
+                                <form method="post" action="{{ url_for('update_installation', installation_id=inst.installation_id) }}" style="display:inline;">
+                                    <button type="submit" class="btn-sm btn-success" onclick="return confirm('Update to version {{ inst.latest_version }}?')">
+                                        Update Now
+                                    </button>
+                                </form>
                                 {% endif %}
                                 
                                 {% if inst.installer_filename %}
                                 <a href="{{ url_for('download_installer', software_id=inst.software_id) }}" class="btn-sm btn-secondary" title="Download Installer">
-                                    📥 Download
+                                    📥
                                 </a>
                                 {% endif %}
                                 
-                                {% if not inst.is_long_life and not inst.policy_compliant %}
-                                <button class="btn-sm btn-warning" onclick="setLongLife({{ inst.installation_id }}, '{{ inst.software_name }}')">
-                                    Grant Exception
-                                </button>
-                                {% elif inst.is_long_life %}
-                                <form method="post" action="{{ url_for('remove_long_life', installation_id=inst.installation_id) }}" style="display:inline;">
-                                    <button type="submit" class="btn-sm btn-outline" onclick="return confirm('Remove long-life exception?')">
-                                        Remove Exception
+                                {% if current_user.is_superuser %}
+                                    {% if not inst.is_long_life and not inst.policy_compliant %}
+                                    <button class="btn-sm btn-warning" onclick="setLongLife({{ inst.installation_id }}, '{{ inst.software_name }}')">
+                                        Grant Exception
                                     </button>
-                                </form>
+                                    {% elif inst.is_long_life %}
+                                    <form method="post" action="{{ url_for('remove_long_life', installation_id=inst.installation_id) }}" style="display:inline;">
+                                        <button type="submit" class="btn-sm btn-outline" onclick="return confirm('Remove long-life exception?')">
+                                            Remove Exception
+                                        </button>
+                                    </form>
+                                    {% endif %}
+                                    
+                                    <form method="post" action="{{ url_for('delete_installation', installation_id=inst.installation_id) }}" style="display:inline;">
+                                        <button type="submit" class="btn-sm btn-danger" onclick="return confirm('Delete this installation?')">
+                                            🗑️
+                                        </button>
+                                    </form>
                                 {% endif %}
                             </div>
                         </td>
@@ -192,12 +201,14 @@
             <button class="btn btn-primary" onclick="showAddInstallationModal()">
                 ➕ Add Installation
             </button>
+            {% if current_user.is_superuser %}
             <a href="{{ url_for('add_software') }}" class="btn btn-secondary">
                 📦 Add New Software
             </a>
             <button class="btn btn-secondary" onclick="showAddRoomModal()">
                 🏢 Add New Room
             </button>
+            {% endif %}
         </div>
     </div>
 
@@ -209,10 +220,10 @@
             <form method="post" action="{{ url_for('add_installation') }}">
                 <div class="form-group">
                     <label>Software:</label>
-                    <select name="software_id" required>
+                    <select name="software_id" id="software_select" required onchange="updateVersion()">
                         <option value="">Select Software...</option>
-                        {% for sw in software_list %}
-                        <option value="{{ sw }}">{{ sw }}</option>
+                        {% for sw in software_with_ids %}
+                        <option value="{{ sw.id }}" data-version="{{ sw.version }}">{{ sw.software_name }}</option>
                         {% endfor %}
                     </select>
                 </div>
@@ -220,18 +231,14 @@
                     <label>Room:</label>
                     <select name="room_id" required>
                         <option value="">Select Room...</option>
-                        {% for room in rooms %}
-                        <option value="{{ room }}">{{ room }}</option>
+                        {% for room in rooms_with_ids %}
+                        <option value="{{ room.id }}">{{ room.room_name }}</option>
                         {% endfor %}
                     </select>
                 </div>
                 <div class="form-group">
                     <label>Version:</label>
-                    <input type="text" name="version" required>
-                </div>
-                <div class="form-group">
-                    <label>Updated By:</label>
-                    <input type="text" name="updated_by" required>
+                    <input type="text" name="version" id="version_input" required>
                 </div>
                 <button type="submit" class="btn btn-primary">Add Installation</button>
             </form>
@@ -261,50 +268,12 @@
         </div>
     </div>
 
-    <!-- Update Request Modal -->
-    <div id="updateRequestModal" class="modal">
-        <div class="modal-content">
-            <span class="close" onclick="closeModal('updateRequestModal')">&times;</span>
-            <h2>Create Update Request</h2>
-            <form method="post" action="{{ url_for('create_update_request') }}">
-                <input type="hidden" name="installation_id" id="update_installation_id">
-                <div class="form-group">
-                    <label>Software:</label>
-                    <input type="text" id="update_software_name" readonly>
-                </div>
-                <div class="form-group">
-                    <label>Room:</label>
-                    <input type="text" id="update_room_name" readonly>
-                </div>
-                <div class="form-group">
-                    <label>Priority:</label>
-                    <select name="priority">
-                        <option value="Low">Low</option>
-                        <option value="Normal" selected>Normal</option>
-                        <option value="High">High</option>
-                        <option value="Critical">Critical</option>
-                    </select>
-                </div>
-                <div class="form-group">
-                    <label>Requested By:</label>
-                    <input type="text" name="requested_by" required>
-                </div>
-                <div class="form-group">
-                    <label>Notes:</label>
-                    <textarea name="notes" rows="3"></textarea>
-                </div>
-                <button type="submit" class="btn btn-primary">Create Request</button>
-            </form>
-        </div>
-    </div>
-
     <!-- Long-Life Exception Modal -->
     <div id="longLifeModal" class="modal">
         <div class="modal-content">
             <span class="close" onclick="closeModal('longLifeModal')">&times;</span>
             <h2>Grant Long-Life Exception</h2>
             <form method="post" id="longLifeForm">
-                <input type="hidden" name="installation_id" id="longlife_installation_id">
                 <div class="form-group">
                     <label>Software:</label>
                     <input type="text" id="longlife_software_name" readonly>
@@ -313,16 +282,23 @@
                     <label>Reason for Exception:</label>
                     <textarea name="reason" rows="3" required placeholder="Explain why this software requires a long-life exception..."></textarea>
                 </div>
-                <div class="form-group">
-                    <label>Approved By:</label>
-                    <input type="text" name="approved_by" required>
-                </div>
                 <button type="submit" class="btn btn-warning">Grant Exception</button>
             </form>
         </div>
     </div>
 
     <script>
+        function updateVersion() {
+            const select = document.getElementById('software_select');
+            const versionInput = document.getElementById('version_input');
+            const selectedOption = select.options[select.selectedIndex];
+            if (selectedOption.value) {
+                versionInput.value = selectedOption.dataset.version;
+            } else {
+                versionInput.value = '';
+            }
+        }
+
         function showAddInstallationModal() {
             document.getElementById('addInstallationModal').style.display = 'block';
         }
@@ -335,15 +311,7 @@
             document.getElementById(modalId).style.display = 'none';
         }
 
-        function createUpdateRequest(installationId, softwareName, roomName) {
-            document.getElementById('update_installation_id').value = installationId;
-            document.getElementById('update_software_name').value = softwareName;
-            document.getElementById('update_room_name').value = roomName;
-            document.getElementById('updateRequestModal').style.display = 'block';
-        }
-
         function setLongLife(installationId, softwareName) {
-            document.getElementById('longlife_installation_id').value = installationId;
             document.getElementById('longlife_software_name').value = softwareName;
             document.getElementById('longLifeForm').action = `/installation/${installationId}/long-life`;
             document.getElementById('longLifeModal').style.display = 'block';

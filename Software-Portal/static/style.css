@@ -529,6 +529,15 @@ body {
     margin-top: 1rem;
 }
 
+.modal-content .form-group {
+    margin-bottom: 1rem;
+}
+
+.modal-content button[type="submit"] {
+    margin-top: 1.5rem;
+    width: 100%;
+}
+
 /* Rooms Grid */
 .rooms-grid {
     display: grid;
