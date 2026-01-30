@@ -14,6 +14,7 @@
         <ul class="nav-menu">
             <li><a href="{{ url_for('index') }}" class="active">Dashboard</a></li>
             <li><a href="{{ url_for('software_list') }}">Software</a></li>
+            <li><a href="{{ url_for('vendors_list') }}">Vendors</a></li>
             <li><a href="{{ url_for('rooms_list') }}">Rooms</a></li>
             <li><a href="{{ url_for('my_assignments') }}">{% if current_user.is_superuser %}Assignments{% else %}My Assignments{% endif %}{% if pending_assignments_count > 0 %}<span class="notification-badge">{{ pending_assignments_count }}</span>{% endif %}</a></li>
             {% if current_user.is_superuser %}
@@ -115,14 +116,15 @@
                             <div class="text-muted">{{ inst.building }}</div>
                         </td>
                         <td>
-                            <strong>{{ inst.software_name }}</strong>
+                            <strong>{{ inst.product_name }}</strong>
+                            <div class="text-muted">{{ inst.vendor_name }}</div>
                             {% if inst.needs_update %}
                             <span class="badge badge-info">Update Available</span>
                             {% endif %}
                         </td>
-                        <td>{{ inst.vendor or 'N/A' }}</td>
+                        <td>{{ inst.vendor_name }}</td>
                         <td>{{ inst.installed_version }}</td>
-                        <td>{{ inst.latest_version }}</td>
+                        <td>{{ inst.latest_version or 'N/A' }}</td>
                         <td>
                             <div>{{ inst.license_type or 'N/A' }}</div>
                             {% if inst.license_key %}
@@ -165,7 +167,7 @@
                                 {% endif %}
                                 
                                 {% if inst.installer_filename %}
-                                <a href="{{ url_for('download_installer', software_id=inst.software_id) }}" class="btn-sm btn-secondary" title="Download Installer">
+                                <a href="{{ url_for('download_installer', version_id=inst.version_id) }}" class="btn-sm btn-secondary" title="Download Installer">
                                     📥
                                 </a>
                                 {% endif %}
@@ -227,11 +229,11 @@
             <h2>Add Software Installation</h2>
             <form method="post" action="{{ url_for('add_installation') }}">
                 <div class="form-group">
-                    <label>Software:</label>
-                    <select name="software_id" id="software_select" required onchange="updateVersion()">
+                    <label>Software Version:</label>
+                    <select name="version_id" required>
                         <option value="">Select Software...</option>
                         {% for sw in software_with_ids %}
-                        <option value="{{ sw.id }}" data-version="{{ sw.version }}">{{ sw.software_name }}</option>
+                        <option value="{{ sw.id }}">{{ sw.vendor_name }} - {{ sw.product_name }} (v{{ sw.version }}){% if sw.is_latest %} - Latest{% endif %}</option>
                         {% endfor %}
                     </select>
                 </div>
@@ -244,9 +246,6 @@
                     </select>
                     <small class="text-muted">Select one or more rooms for installation</small>
                 </div>
-                <div class="form-group">
-                    <label>Version:</label>
-                    <input type="text" name="version" id="version_input" required>
                 </div>
                 <button type="submit" class="btn btn-primary">Add Installation</button>
             </form>

@@ -14,6 +14,7 @@
         <ul class="nav-menu">
             <li><a href="{{ url_for('index') }}">Dashboard</a></li>
             <li><a href="{{ url_for('software_list') }}">Software</a></li>
+            <li><a href="{{ url_for('vendors_list') }}">Vendors</a></li>
             <li><a href="{{ url_for('rooms_list') }}">Rooms</a></li>
             <li><a href="{{ url_for('my_assignments') }}" class="active">{% if current_user.is_superuser %}Assignments{% else %}My Assignments{% endif %}{% if pending_assignments_count > 0 %}<span class="notification-badge">{{ pending_assignments_count }}</span>{% endif %}</a></li>
             {% if current_user.is_superuser %}
@@ -67,7 +68,8 @@
             <table class="data-table">
                 <thead>
                     <tr>
-                        <th>Software</th>
+                        <th>Vendor</th>
+                        <th>Product</th>
                         <th>Version</th>
                         <th>Room</th>
                         {% if current_user.is_superuser %}<th>Assigned To</th>{% endif %}
@@ -82,7 +84,8 @@
                     {% if assignments %}
                         {% for assignment in assignments %}
                         <tr {% if assignment.status == 'pending' and assignment.due_date and assignment.due_date < now %}class="row-warning"{% elif assignment.status == 'declined' %}style="background-color: #ffebee;"{% endif %}>
-                            <td><strong>{{ assignment.software_name }}</strong></td>
+                            <td>{{ assignment.vendor_name }}</td>
+                            <td><strong>{{ assignment.product_name }}</strong></td>
                             <td>{{ assignment.version }}</td>
                             <td>{{ assignment.room_name }}</td>
                             {% if current_user.is_superuser %}
@@ -210,18 +213,18 @@
             <h2>Create New Assignment</h2>
             <form action="{{ url_for('assign_installation') }}" method="post">
                 <div class="form-group">
-                    <label>Software: <span style="color: red;">*</span></label>
+                    <label>Software Version: <span style="color: red;">*</span></label>
                     <div style="border: 1px solid #ddd; border-radius: 5px; padding: 10px; max-height: 200px; overflow-y: auto; background: white;">
                         {% for sw in software_list %}
                         <div style="margin-bottom: 8px;">
                             <label style="display: flex; align-items: center; cursor: pointer; font-weight: normal;">
-                                <input type="checkbox" name="software_ids" value="{{ sw.id }}" style="margin-right: 8px;">
-                                <span>{{ sw.software_name }} (v{{ sw.version }})</span>
+                                <input type="checkbox" name="version_ids" value="{{ sw.id }}" style="margin-right: 8px;">
+                                <span>{{ sw.vendor_name }} - {{ sw.product_name }} (v{{ sw.version }}){% if sw.is_latest %} <strong style="color: #28a745;">Latest</strong>{% endif %}</span>
                             </label>
                         </div>
                         {% endfor %}
                     </div>
-                    <small style="color: #666;">Select one or more software</small>
+                    <small style="color: #666;">Select one or more software versions</small>
                 </div>
                 
                 <div class="form-group">

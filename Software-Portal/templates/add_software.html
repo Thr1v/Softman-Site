@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Add Software - SoftMAN</title>
+    <title>Add Software Version - SoftMAN</title>
     <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
 </head>
 <body>
@@ -14,6 +14,7 @@
         <ul class="nav-menu">
             <li><a href="{{ url_for('index') }}">Dashboard</a></li>
             <li><a href="{{ url_for('software_list') }}" class="active">Software</a></li>
+            <li><a href="{{ url_for('vendors_list') }}">Vendors</a></li>
             <li><a href="{{ url_for('rooms_list') }}">Rooms</a></li>
             <li><a href="{{ url_for('my_assignments') }}">{% if current_user.is_superuser %}Assignments{% else %}My Assignments{% endif %}{% if pending_assignments_count > 0 %}<span class="notification-badge">{{ pending_assignments_count }}</span>{% endif %}</a></li>
             {% if current_user.is_superuser %}
@@ -32,54 +33,53 @@
 
     <div class="container">
         <div class="page-header">
-            <h2>Add New Software</h2>
+            <h2>Add New Software Version</h2>
         </div>
 
         <div class="form-container">
             <form method="post" enctype="multipart/form-data" class="software-form">
                 <div class="form-row">
                     <div class="form-group">
-                        <label>Software Name *</label>
-                        <input type="text" name="software_name" required>
+                        <label>Vendor *</label>
+                        <select name="vendor_id" id="vendor_id" required onchange="loadProducts()">
+                            <option value="">Select Vendor...</option>
+                            {% for vendor in vendors %}
+                            <option value="{{ vendor.id }}">{{ vendor.vendor_name }}</option>
+                            {% endfor %}
+                        </select>
+                        <small class="text-muted">Don't see your vendor? <a href="{{ url_for('add_vendor') }}">Add a new vendor</a></small>
                     </div>
+                    <div class="form-group">
+                        <label>Product *</label>
+                        <select name="product_id" id="product_id" required disabled>
+                            <option value="">Select vendor first...</option>
+                        </select>
+                        <small class="text-muted">Products will load after selecting a vendor</small>
+                    </div>
+                </div>
+
+                <div class="form-row">
                     <div class="form-group">
                         <label>Version *</label>
-                        <input type="text" name="version" required>
-                    </div>
-                </div>
-
-                <div class="form-row">
-                    <div class="form-group">
-                        <label>Vendor</label>
-                        <input type="text" name="vendor">
+                        <input type="text" name="version" required placeholder="e.g., 2024, 1.5.2, 365">
                     </div>
                     <div class="form-group">
-                        <label>License Type</label>
-                        <select name="license_type">
-                            <option value="">Select...</option>
-                            <option value="Site">Site License</option>
-                            <option value="Volume">Volume License</option>
-                            <option value="Per-User">Per-User</option>
-                            <option value="Per-Device">Per-Device</option>
-                            <option value="Free">Free/Open Source</option>
-                        </select>
-                    </div>
-                </div>
-
-                <div class="form-row">
-                    <div class="form-group">
-                        <label>License Key</label>
-                        <input type="text" name="license_key" placeholder="Enter license key if applicable">
-                    </div>
-                    <div class="form-group">
-                        <label>License Count</label>
-                        <input type="number" name="license_count" value="0" placeholder="Number of licenses (-1 for unlimited)">
+                        <label>
+                            <input type="checkbox" name="is_latest" value="1" style="width: auto; margin-right: 0.5rem;">
+                            Mark as Latest Version
+                        </label>
+                        <small class="text-muted">Check if this is the current/recommended version</small>
                     </div>
                 </div>
 
                 <div class="form-group">
-                    <label>Description</label>
-                    <textarea name="description" rows="3" placeholder="Software description and notes"></textarea>
+                    <label>License Key</label>
+                    <input type="text" name="license_key" placeholder="Enter license key if applicable">
+                </div>
+
+                <div class="form-group">
+                    <label>Release Notes</label>
+                    <textarea name="release_notes" rows="3" placeholder="What's new in this version?"></textarea>
                 </div>
 
                 <div class="form-group">
@@ -95,11 +95,40 @@
                 </div>
 
                 <script>
+                    async function loadProducts() {
+                        const vendorId = document.getElementById('vendor_id').value;
+                        const productSelect = document.getElementById('product_id');
+                        
+                        if (!vendorId) {
+                            productSelect.disabled = true;
+                            productSelect.innerHTML = '<option value="">Select vendor first...</option>';
+                            return;
+                        }
+
+                        try {
+                            const response = await fetch(`/api/products/${vendorId}`);
+                            const products = await response.json();
+                            
+                            productSelect.innerHTML = '<option value="">Select Product...</option>';
+                            products.forEach(product => {
+                                const option = document.createElement('option');
+                                option.value = product.id;
+                                option.textContent = product.product_name;
+                                productSelect.appendChild(option);
+                            });
+                            productSelect.disabled = false;
+                        } catch (error) {
+                            console.error('Error loading products:', error);
+                            alert('Failed to load products. Please try again.');
+                        }
+                    }
+
                     function clearUrlField() {
                         if (document.getElementById('installer_file').value) {
                             document.getElementById('installer_url').value = '';
                         }
                     }
+
                     function clearFileField() {
                         if (document.getElementById('installer_url').value) {
                             document.getElementById('installer_file').value = '';
@@ -108,7 +137,7 @@
                 </script>
 
                 <div class="form-actions">
-                    <button type="submit" class="btn btn-primary">Add Software</button>
+                    <button type="submit" class="btn btn-primary">Add Software Version</button>
                     <a href="{{ url_for('software_list') }}" class="btn btn-outline">Cancel</a>
                 </div>
             </form>

@@ -1,0 +1,170 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Vendors - SoftMAN</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+    <style>
+        .vendor-card {
+            background: white;
+            border-radius: 10px;
+            padding: 1.5rem;
+            margin-bottom: 1rem;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+        }
+        .vendor-card.archived {
+            background: #f8f9fa;
+            border: 2px dashed #ccc;
+            opacity: 0.8;
+        }
+        .vendor-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 1rem;
+        }
+        .add-product-form {
+            margin-top: 1rem;
+            padding: 1rem;
+            background: #f8f9fa;
+            border-radius: 5px;
+            display: none;
+        }
+        .add-product-form.show {
+            display: block;
+        }
+        .archive-toggle {
+            margin-bottom: 1rem;
+        }
+    </style>
+</head>
+<body>
+    <nav class="navbar">
+        <div class="nav-brand">
+            <h1>🖥️ SoftMAN</h1>
+        </div>
+        <ul class="nav-menu">
+            <li><a href="{{ url_for('index') }}">Dashboard</a></li>
+            <li><a href="{{ url_for('software_list') }}">Software</a></li>
+            <li><a href="{{ url_for('vendors_list') }}" class="active">Vendors</a></li>
+            <li><a href="{{ url_for('rooms_list') }}">Rooms</a></li>
+            <li><a href="{{ url_for('my_assignments') }}">{% if current_user.is_superuser %}Assignments{% else %}My Assignments{% endif %}{% if pending_assignments_count > 0 %}<span class="notification-badge">{{ pending_assignments_count }}</span>{% endif %}</a></li>
+            {% if current_user.is_superuser %}
+            <li><a href="{{ url_for('compliance_report') }}">Compliance</a></li>
+            <li><a href="{{ url_for('users_list') }}">Users</a></li>
+            {% endif %}
+            <li class="user-info">
+                {{ current_user.username }}
+                {% if current_user.is_superuser %}
+                <span class="badge badge-admin">Admin</span>
+                {% endif %}
+            </li>
+            <li><a href="{{ url_for('logout') }}" class="btn-sm btn-secondary">Logout</a></li>
+        </ul>
+    </nav>
+
+    <div class="container">
+        <div class="page-header">
+            <h2>🏢 Vendors</h2>
+            <div style="display: flex; gap: 0.5rem;">
+                {% if current_user.is_superuser %}
+                <a href="{{ url_for('add_vendor') }}" class="btn btn-primary">➕ Add Vendor</a>
+                {% endif %}
+            </div>
+        </div>
+
+        {% with messages = get_flashed_messages(with_categories=true) %}
+            {% if messages %}
+                {% for category, message in messages %}
+                    <div class="alert alert-{{ category }}">{{ message }}</div>
+                {% endfor %}
+            {% endif %}
+        {% endwith %}
+
+        <div class="archive-toggle">
+            {% if show_archived %}
+            <a href="{{ url_for('vendors_list') }}" class="btn btn-outline">Hide Archived Vendors</a>
+            {% else %}
+            <a href="{{ url_for('vendors_list', show_archived='true') }}" class="btn btn-outline">Show Archived Vendors</a>
+            {% endif %}
+        </div>
+
+        {% if vendors %}
+            {% for vendor in vendors %}
+                <div class="vendor-card{% if vendor.is_archived %} archived{% endif %}">
+                    <div class="vendor-header">
+                        <div>
+                            <h3>
+                                {{ vendor.vendor_name }}
+                                {% if vendor.is_archived %}
+                                <span class="badge badge-secondary">Archived</span>
+                                {% endif %}
+                            </h3>
+                            {% if vendor.website %}
+                            <p style="color: #666; margin: 0.25rem 0;">
+                                <a href="{{ vendor.website }}" target="_blank">{{ vendor.website }}</a>
+                            </p>
+                            {% endif %}
+                        </div>
+                        <div style="display: flex; gap: 0.5rem; align-items: center;">
+                            <span class="badge badge-info">{{ vendor.product_count }} Products</span>
+                            {% if current_user.is_superuser %}
+                                {% if vendor.is_archived %}
+                                <form method="post" action="{{ url_for('unarchive_vendor', vendor_id=vendor.id) }}" style="display:inline;">
+                                    <button type="submit" class="btn-sm btn-success">Unarchive</button>
+                                </form>
+                                {% else %}
+                                <button onclick="toggleProductForm({{ vendor.id }})" class="btn-sm btn-outline">Add Product</button>
+                                <form method="post" action="{{ url_for('archive_vendor', vendor_id=vendor.id) }}" style="display:inline;" onsubmit="return confirmArchive('{{ vendor.vendor_name }}', {{ vendor.product_count }});">
+                                    <button type="submit" class="btn-sm btn-warning">Archive</button>
+                                </form>
+                                {% endif %}
+                            {% endif %}
+                        </div>
+                    </div>
+
+                    {% if current_user.is_superuser and not vendor.is_archived %}
+                    <div id="product-form-{{ vendor.id }}" class="add-product-form">
+                        <form method="post" action="{{ url_for('add_product') }}">
+                            <input type="hidden" name="vendor_id" value="{{ vendor.id }}">
+                            <div class="form-group">
+                                <label>Product Name *</label>
+                                <input type="text" name="product_name" required class="form-control">
+                            </div>
+                            <div class="form-group">
+                                <label>Description</label>
+                                <textarea name="description" class="form-control" rows="2"></textarea>
+                            </div>
+                            <button type="submit" class="btn btn-primary">Add Product</button>
+                            <button type="button" onclick="toggleProductForm({{ vendor.id }})" class="btn btn-secondary">Cancel</button>
+                        </form>
+                    </div>
+                    {% endif %}
+                </div>
+            {% endfor %}
+        {% else %}
+            <div class="vendor-card">
+                <p style="text-align: center; color: #999;">No vendors found. Add one to get started!</p>
+            </div>
+        {% endif %}
+    </div>
+
+    <script>
+        function toggleProductForm(vendorId) {
+            const form = document.getElementById('product-form-' + vendorId);
+            form.classList.toggle('show');
+        }
+
+        function confirmArchive(vendorName, productCount) {
+            const message = `Archive vendor "${vendorName}"?\n\n` +
+                          `This will archive:\n` +
+                          `• ${productCount} product(s)\n` +
+                          `• All versions under these products\n\n` +
+                          `The vendor can be unarchived later if needed.\n\n` +
+                          `⚠️ This action cannot be performed if there are active installations or pending assignments.`;
+            return confirm(message);
+        }
+    </script>
+</body>
+</html>

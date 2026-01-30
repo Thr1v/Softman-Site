@@ -14,6 +14,7 @@
         <ul class="nav-menu">
             <li><a href="{{ url_for('index') }}">Dashboard</a></li>
             <li><a href="{{ url_for('software_list') }}">Software</a></li>
+            <li><a href="{{ url_for('vendors_list') }}">Vendors</a></li>
             <li><a href="{{ url_for('rooms_list') }}">Rooms</a></li>
             <li><a href="{{ url_for('my_assignments') }}">{% if current_user.is_superuser %}Assignments{% else %}My Assignments{% endif %}{% if pending_assignments_count > 0 %}<span class="notification-badge">{{ pending_assignments_count }}</span>{% endif %}</a></li>
             {% if current_user.is_superuser %}
@@ -37,16 +38,20 @@
 
         <div class="form-container">
             <form method="post" class="software-form">
-                <div class="form-row">
-                    <div class="form-group">
-                        <label>Software *</label>
-                        <select name="software_id" required>
-                            <option value="">Select Software...</option>
-                            {% for sw in software_list %}
-                            <option value="{{ sw.id }}">{{ sw.software_name }} (v{{ sw.version }})</option>
-                            {% endfor %}
-                        </select>
+                <div class="form-group">
+                    <label>Software Versions (select one or more) *</label>
+                    <div style="max-height: 300px; overflow-y: auto; border: 1px solid #ddd; padding: 1rem; border-radius: 4px;">
+                        {% for sw in software_list %}
+                        <div style="margin-bottom: 0.5rem;">
+                            <label style="display: flex; align-items: center; cursor: pointer;">
+                                <input type="checkbox" name="version_ids" value="{{ sw.id }}" style="margin-right: 0.5rem;">
+                                <span>{{ sw.vendor_name }} - {{ sw.product_name }} (v{{ sw.version }}){% if sw.is_latest %} <strong style="color: #28a745;">Latest</strong>{% endif %}</span>
+                            </label>
+                        </div>
+                        {% endfor %}
                     </div>
+                    <small>Select software versions to install. Latest versions are marked.</small>
+                </div>
                     <div class="form-group">
                         <label>Assign To *</label>
                         <select name="assigned_to" required>

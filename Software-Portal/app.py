@@ -204,6 +204,153 @@ def delete_user(user_id):
     flash('User deleted successfully!', 'success')
     return redirect(url_for('users_list'))
 
+@app.route('/vendors')
+@login_required
+def vendors_list():
+    show_archived = request.args.get('show_archived', 'false') == 'true'
+    
+    conn = get_db()
+    cursor = conn.cursor()
+    
+    if show_archived:
+        cursor.execute('''
+            SELECT v.*, COUNT(DISTINCT sp.id) as product_count
+            FROM vendors v 
+            LEFT JOIN software_products sp ON v.id = sp.vendor_id
+            GROUP BY v.id 
+            ORDER BY v.is_archived, v.vendor_name
+        ''')
+    else:
+        cursor.execute('''
+            SELECT v.*, COUNT(DISTINCT sp.id) as product_count
+            FROM vendors v 
+            LEFT JOIN software_products sp ON v.id = sp.vendor_id
+            WHERE v.is_archived = 0
+            GROUP BY v.id 
+            ORDER BY v.vendor_name
+        ''')
+    
+    vendors = cursor.fetchall()
+    conn.close()
+    return render_template('vendors_list.html', vendors=vendors, show_archived=show_archived)
+
+@app.route('/vendors/add', methods=['GET', 'POST'])
+@login_required
+@superuser_required
+def add_vendor():
+    if request.method == 'POST':
+        vendor_name = request.form['vendor_name']
+        website = request.form.get('website', '')
+        
+        conn = get_db()
+        cursor = conn.cursor()
+        try:
+            cursor.execute('INSERT INTO vendors (vendor_name, website) VALUES (?, ?)',
+                          (vendor_name, website))
+            conn.commit()
+            flash(f'Vendor {vendor_name} added successfully!', 'success')
+            return redirect(url_for('vendors_list'))
+        except sqlite3.IntegrityError:
+            flash('Vendor already exists!', 'error')
+        finally:
+            conn.close()
+    
+    return render_template('add_vendor.html')
+
+@app.route('/vendors/<int:vendor_id>/archive', methods=['POST'])
+@login_required
+@superuser_required
+def archive_vendor(vendor_id):
+    conn = get_db()
+    cursor = conn.cursor()
+    
+    # Check if vendor has products
+    cursor.execute('SELECT COUNT(*) as count FROM software_products WHERE vendor_id = ?', (vendor_id,))
+    product_count = cursor.fetchone()['count']
+    
+    # Check if any of the vendor's products have versions with active installations
+    cursor.execute('''
+        SELECT COUNT(DISTINCT i.id) as count
+        FROM installations i
+        JOIN software_versions sv ON i.version_id = sv.id
+        JOIN software_products sp ON sv.product_id = sp.id
+        WHERE sp.vendor_id = ?
+    ''', (vendor_id,))
+    installation_count = cursor.fetchone()['count']
+    
+    # Check if vendor has active assignments
+    cursor.execute('''
+        SELECT COUNT(DISTINCT a.id) as count
+        FROM assignments a
+        JOIN software_versions sv ON a.version_id = sv.id
+        JOIN software_products sp ON sv.product_id = sp.id
+        WHERE sp.vendor_id = ?
+        AND a.status != 'completed'
+    ''', (vendor_id,))
+    assignment_count = cursor.fetchone()['count']
+    
+    if installation_count > 0 or assignment_count > 0:
+        flash(f'Cannot archive vendor: {installation_count} active installation(s) and {assignment_count} pending assignment(s). '
+              f'Please remove all installations and complete assignments before archiving.', 'error')
+    else:
+        cursor.execute('''
+            UPDATE vendors 
+            SET is_archived = 1, archived_at = CURRENT_TIMESTAMP 
+            WHERE id = ?
+        ''', (vendor_id,))
+        conn.commit()
+        
+        cursor.execute('SELECT vendor_name FROM vendors WHERE id = ?', (vendor_id,))
+        vendor_name = cursor.fetchone()['vendor_name']
+        flash(f'Vendor "{vendor_name}" archived successfully! '
+              f'({product_count} product(s) also archived)', 'success')
+    
+    conn.close()
+    return redirect(url_for('vendors_list'))
+
+@app.route('/vendors/<int:vendor_id>/unarchive', methods=['POST'])
+@login_required
+@superuser_required
+def unarchive_vendor(vendor_id):
+    conn = get_db()
+    cursor = conn.cursor()
+    
+    cursor.execute('''
+        UPDATE vendors 
+        SET is_archived = 0, archived_at = NULL 
+        WHERE id = ?
+    ''', (vendor_id,))
+    conn.commit()
+    
+    cursor.execute('SELECT vendor_name FROM vendors WHERE id = ?', (vendor_id,))
+    vendor_name = cursor.fetchone()['vendor_name']
+    flash(f'Vendor "{vendor_name}" unarchived successfully!', 'success')
+    
+    conn.close()
+    return redirect(url_for('vendors_list', show_archived='true'))
+
+@app.route('/products/add', methods=['POST'])
+@login_required
+@superuser_required
+def add_product():
+    vendor_id = request.form['vendor_id']
+    product_name = request.form['product_name']
+    description = request.form.get('description', '')
+    
+    conn = get_db()
+    cursor = conn.cursor()
+    try:
+        cursor.execute('INSERT INTO software_products (vendor_id, product_name, description) VALUES (?, ?, ?)',
+                      (vendor_id, product_name, description))
+        conn.commit()
+        flash(f'Product {product_name} added successfully!', 'success')
+    except sqlite3.IntegrityError:
+        flash('Product already exists for this vendor!', 'error')
+    finally:
+        conn.close()
+    
+    return redirect(url_for('vendors_list'))
+
 @app.route('/compliance')
 @login_required
 @superuser_required
@@ -236,11 +383,13 @@ def compliance_report():
     for room in rooms:
         cursor.execute('''
             SELECT 
-                i.id as installation_id, s.software_name, s.vendor, i.installed_version, i.last_updated,
+                i.id as installation_id, v.vendor_name, sp.product_name, sv.version, i.last_updated,
                 CAST((julianday('now') - julianday(i.last_updated)) AS INTEGER) as days_since_update,
                 i.is_long_life, i.long_life_reason, i.updated_by
             FROM installations i
-            JOIN software s ON i.software_id = s.id
+            JOIN software_versions sv ON i.version_id = sv.id
+            JOIN software_products sp ON sv.product_id = sp.id
+            JOIN vendors v ON sp.vendor_id = v.id
             WHERE i.room_id = ?
             AND (CAST((julianday('now') - julianday(i.last_updated)) AS INTEGER) > ? - 30
                  OR i.is_long_life = 1)
@@ -264,13 +413,18 @@ def index():
     
     query = '''
         SELECT 
-            i.id as installation_id, s.id as software_id, s.software_name, s.vendor,
-            i.installed_version, s.version as latest_version, s.license_type, s.license_key,
+            i.id as installation_id, sv.id as version_id, 
+            v.vendor_name, sp.product_name,
+            sv.version as installed_version, sv.license_type, sv.license_key,
             r.id as room_id, r.room_name, r.building, i.last_updated, i.updated_by,
-            i.is_long_life, i.long_life_reason, s.installer_filename
+            i.is_long_life, i.long_life_reason, sv.installer_filename,
+            latest.version as latest_version, latest.id as latest_version_id
         FROM installations i
-        JOIN software s ON i.software_id = s.id
+        JOIN software_versions sv ON i.version_id = sv.id
+        JOIN software_products sp ON sv.product_id = sp.id
+        JOIN vendors v ON sp.vendor_id = v.id
         JOIN rooms r ON i.room_id = r.id
+        LEFT JOIN software_versions latest ON sp.id = latest.product_id AND latest.is_latest = 1
         WHERE 1=1
     '''
     
@@ -280,10 +434,11 @@ def index():
         params.append(f'%{room_filter}%')
     
     if software_filter:
-        query += ' AND s.software_name LIKE ?'
+        query += ' AND (sp.product_name LIKE ? OR v.vendor_name LIKE ?)'
+        params.append(f'%{software_filter}%')
         params.append(f'%{software_filter}%')
     
-    query += ' ORDER BY r.room_name, s.software_name'
+    query += ' ORDER BY r.room_name, v.vendor_name, sp.product_name'
     
     cursor.execute(query, params)
     installations = []
@@ -305,13 +460,20 @@ def index():
     cursor.execute('SELECT DISTINCT room_name FROM rooms ORDER BY room_name')
     rooms = [row['room_name'] for row in cursor.fetchall()]
     
-    cursor.execute('SELECT DISTINCT software_name FROM software ORDER BY software_name')
-    software_list = [row['software_name'] for row in cursor.fetchall()]
+    cursor.execute('SELECT DISTINCT sp.product_name FROM software_products sp ORDER BY sp.product_name')
+    software_list = [row['product_name'] for row in cursor.fetchall()]
     
     cursor.execute('SELECT id, room_name FROM rooms ORDER BY room_name')
     rooms_with_ids = [dict(row) for row in cursor.fetchall()]
     
-    cursor.execute('SELECT id, software_name, version FROM software ORDER BY software_name')
+    cursor.execute('''
+        SELECT sv.id, v.vendor_name, sp.product_name, sv.version, sv.is_latest
+        FROM software_versions sv
+        JOIN software_products sp ON sv.product_id = sp.id
+        JOIN vendors v ON sp.vendor_id = v.id
+        WHERE sv.is_latest = 1
+        ORDER BY v.vendor_name, sp.product_name
+    ''')
     software_with_ids = [dict(row) for row in cursor.fetchall()]
     
     conn.close()
@@ -327,13 +489,28 @@ def software_list():
     conn = get_db()
     cursor = conn.cursor()
     cursor.execute('''
-        SELECT s.*, COUNT(i.id) as installation_count
-        FROM software s LEFT JOIN installations i ON s.id = i.software_id
-        GROUP BY s.id ORDER BY s.software_name
+        SELECT 
+            v.vendor_name, v.id as vendor_id,
+            sp.product_name, sp.id as product_id, sp.description,
+            sv.id as version_id, sv.version, sv.is_latest, sv.license_type, sv.license_key,
+            sv.license_count, sv.installer_filename, sv.installer_url,
+            COUNT(i.id) as installation_count
+        FROM vendors v
+        JOIN software_products sp ON v.id = sp.vendor_id
+        JOIN software_versions sv ON sp.id = sv.product_id
+        LEFT JOIN installations i ON sv.id = i.version_id
+        WHERE v.is_archived = 0
+        GROUP BY sv.id
+        ORDER BY v.vendor_name, sp.product_name, sv.is_latest DESC, sv.version DESC
     ''')
     software = [dict(row) for row in cursor.fetchall()]
+    
+    # Get vendors and products for the add form
+    cursor.execute('SELECT id, vendor_name FROM vendors WHERE is_archived = 0 ORDER BY vendor_name')
+    vendors = cursor.fetchall()
+    
     conn.close()
-    return render_template('software_list.html', software=software)
+    return render_template('software_list.html', software=software, vendors=vendors)
 
 @app.route('/software/add', methods=['GET', 'POST'])
 @superuser_required
@@ -341,6 +518,14 @@ def add_software():
     if request.method == 'POST':
         conn = get_db()
         cursor = conn.cursor()
+        
+        product_id = request.form['product_id']
+        version = request.form['version']
+        is_latest = 1 if request.form.get('is_latest') else 0
+        
+        # If marking as latest, unmark previous latest version
+        if is_latest:
+            cursor.execute('UPDATE software_versions SET is_latest = 0 WHERE product_id = ?', (product_id,))
         
         installer_filename = None
         installer_path = None
@@ -356,47 +541,69 @@ def add_software():
                 installer_path = filepath
                 installer_url = None  # Clear URL if file is uploaded
         
-        cursor.execute('''
-            INSERT INTO software (software_name, version, vendor, license_key, 
-                                license_type, license_count, description, installer_filename, 
-                                installer_path, installer_url)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        ''', (request.form['software_name'], request.form['version'], request.form.get('vendor', ''),
-              request.form.get('license_key', ''), request.form.get('license_type', ''),
-              request.form.get('license_count', 0), request.form.get('description', ''),
-              installer_filename, installer_path, installer_url if installer_url else None))
+        try:
+            cursor.execute('''
+                INSERT INTO software_versions (product_id, version, license_key, 
+                                    license_type, license_count, installer_filename, 
+                                    installer_path, installer_url, is_latest, release_notes)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ''', (product_id, version, request.form.get('license_key', ''),
+                  request.form.get('license_type', ''), request.form.get('license_count', 0),
+                  installer_filename, installer_path, installer_url if installer_url else None,
+                  is_latest, request.form.get('release_notes', '')))
+            
+            conn.commit()
+            flash('Software version added successfully!', 'success')
+        except sqlite3.IntegrityError:
+            flash('This version already exists for this product!', 'error')
+        finally:
+            conn.close()
         
-        conn.commit()
-        conn.close()
-        flash('Software added successfully!', 'success')
         return redirect(url_for('software_list'))
     
-    return render_template('add_software.html')
-
-@app.route('/software/<int:software_id>/delete', methods=['POST'])
-@superuser_required
-def delete_software(software_id):
+    # GET request
     conn = get_db()
     cursor = conn.cursor()
-    cursor.execute('SELECT COUNT(*) as count FROM installations WHERE software_id = ?', (software_id,))
+    cursor.execute('SELECT id, vendor_name FROM vendors WHERE is_archived = 0 ORDER BY vendor_name')
+    vendors = cursor.fetchall()
+    conn.close()
+    
+    return render_template('add_software.html', vendors=vendors)
+
+@app.route('/software/<int:version_id>/delete', methods=['POST'])
+@superuser_required
+def delete_software(version_id):
+    conn = get_db()
+    cursor = conn.cursor()
+    cursor.execute('SELECT COUNT(*) as count FROM installations WHERE version_id = ?', (version_id,))
     count = cursor.fetchone()['count']
     
     if count > 0:
-        flash(f'Cannot delete software with {count} active installations.', 'error')
+        flash(f'Cannot delete software version with {count} active installations.', 'error')
     else:
-        cursor.execute('SELECT installer_path FROM software WHERE id = ?', (software_id,))
+        cursor.execute('SELECT installer_path FROM software_versions WHERE id = ?', (version_id,))
         software = cursor.fetchone()
         if software and software['installer_path'] and os.path.exists(software['installer_path']):
             try:
                 os.remove(software['installer_path'])
             except:
                 pass
-        cursor.execute('DELETE FROM software WHERE id = ?', (software_id,))
+        cursor.execute('DELETE FROM software_versions WHERE id = ?', (version_id,))
         conn.commit()
-        flash('Software deleted successfully!', 'success')
+        flash('Software version deleted successfully!', 'success')
     
     conn.close()
     return redirect(url_for('software_list'))
+
+@app.route('/api/products/<int:vendor_id>')
+@login_required
+def get_products_by_vendor(vendor_id):
+    conn = get_db()
+    cursor = conn.cursor()
+    cursor.execute('SELECT id, product_name, description FROM software_products WHERE vendor_id = ? ORDER BY product_name', (vendor_id,))
+    products = [dict(row) for row in cursor.fetchall()]
+    conn.close()
+    return jsonify(products)
 
 @app.route('/rooms')
 @login_required
@@ -429,14 +636,18 @@ def room_details(room_id):
     # Get all software installed in this room
     cursor.execute('''
         SELECT 
-            i.id as installation_id, s.id as software_id, s.software_name, s.vendor,
-            i.installed_version, s.version as latest_version, i.last_updated, 
+            i.id as installation_id, sv.id as version_id,
+            v.vendor_name, sp.product_name, sv.version as installed_version,
+            latest.version as latest_version, i.last_updated, 
             i.updated_by, i.is_long_life, i.long_life_reason,
             CAST((julianday('now') - julianday(i.last_updated)) AS INTEGER) as days_since_update
         FROM installations i
-        JOIN software s ON i.software_id = s.id
+        JOIN software_versions sv ON i.version_id = sv.id
+        JOIN software_products sp ON sv.product_id = sp.id
+        JOIN vendors v ON sp.vendor_id = v.id
+        LEFT JOIN software_versions latest ON sp.id = latest.product_id AND latest.is_latest = 1
         WHERE i.room_id = ?
-        ORDER BY s.software_name
+        ORDER BY v.vendor_name, sp.product_name
     ''', (room_id,))
     installations = cursor.fetchall()
     
@@ -481,20 +692,19 @@ def add_installation():
     cursor = conn.cursor()
     
     try:
-        software_id = request.form['software_id']
+        version_id = request.form['version_id']
         room_ids = request.form.getlist('room_ids')  # Get multiple room IDs
-        version = request.form['version']
         
         # Insert installation for each selected room
         for room_id in room_ids:
             cursor.execute('''
-                INSERT INTO installations (software_id, room_id, installed_version, updated_by)
-                VALUES (?, ?, ?, ?)
-            ''', (software_id, room_id, version, current_user.username))
+                INSERT INTO installations (version_id, room_id, updated_by)
+                VALUES (?, ?, ?)
+            ''', (version_id, room_id, current_user.username))
         conn.commit()
         flash('Installation added successfully!', 'success')
     except sqlite3.IntegrityError:
-        flash('This software is already installed in this room!', 'error')
+        flash('This software version is already installed in this room!', 'error')
     
     conn.close()
     return redirect(url_for('index'))
@@ -516,20 +726,36 @@ def update_installation(installation_id):
     conn = get_db()
     cursor = conn.cursor()
     
-    cursor.execute('SELECT s.version, i.software_id, i.room_id, i.installed_version FROM installations i JOIN software s ON i.software_id = s.id WHERE i.id = ?',
-                  (installation_id,))
+    # Get current installation and find latest version
+    cursor.execute('''
+        SELECT i.version_id as old_version_id, i.room_id, sv.product_id,
+               latest.id as latest_version_id, latest.version as latest_version,
+               old_sv.version as old_version
+        FROM installations i
+        JOIN software_versions old_sv ON i.version_id = old_sv.id
+        JOIN software_versions sv ON i.version_id = sv.id
+        LEFT JOIN software_versions latest ON sv.product_id = latest.product_id AND latest.is_latest = 1
+        WHERE i.id = ?
+    ''', (installation_id,))
     inst = cursor.fetchone()
     
-    cursor.execute('UPDATE installations SET installed_version = ?, last_updated = ?, updated_by = ? WHERE id = ?',
-                  (inst['version'], datetime.now(), current_user.full_name or current_user.username, installation_id))
+    if inst and inst['latest_version_id']:
+        # Update to latest version
+        cursor.execute('UPDATE installations SET version_id = ?, last_updated = ?, updated_by = ? WHERE id = ?',
+                      (inst['latest_version_id'], datetime.now(), current_user.full_name or current_user.username, installation_id))
+        
+        cursor.execute('''
+            INSERT INTO update_history (installation_id, version_id, room_id, from_version_id, to_version_id, updated_by) 
+            VALUES (?, ?, ?, ?, ?, ?)
+        ''', (installation_id, inst['latest_version_id'], inst['room_id'], inst['old_version_id'], 
+              inst['latest_version_id'], current_user.full_name or current_user.username))
+        
+        conn.commit()
+        flash('Installation updated to latest version successfully!', 'success')
+    else:
+        flash('No latest version available for this product.', 'error')
     
-    cursor.execute('INSERT INTO update_history (installation_id, software_id, room_id, from_version, to_version, updated_by) VALUES (?, ?, ?, ?, ?, ?)',
-                  (installation_id, inst['software_id'], inst['room_id'], inst['installed_version'], inst['version'],
-                   current_user.full_name or current_user.username))
-    
-    conn.commit()
     conn.close()
-    flash('Installation updated successfully!', 'success')
     return redirect(url_for('index'))
 
 @app.route('/installation/<int:installation_id>/long-life', methods=['POST'])
@@ -570,11 +796,13 @@ def my_assignments():
         cursor.execute('''
             SELECT 
                 a.id, a.due_date, a.status, a.notes, a.created_at, a.decline_reason, a.completed_at,
-                s.software_name, s.version, r.room_name,
+                v.vendor_name, sp.product_name, sv.version, r.room_name,
                 u1.username as assigned_to_name,
                 u2.username as assigned_by_name
             FROM assignments a
-            JOIN software s ON a.software_id = s.id
+            JOIN software_versions sv ON a.version_id = sv.id
+            JOIN software_products sp ON sv.product_id = sp.id
+            JOIN vendors v ON sp.vendor_id = v.id
             JOIN rooms r ON a.room_id = r.id
             JOIN users u1 ON a.assigned_to = u1.id
             JOIN users u2 ON a.assigned_by = u2.id
@@ -592,10 +820,12 @@ def my_assignments():
         cursor.execute('''
             SELECT 
                 a.id, a.due_date, a.status, a.notes, a.created_at, a.decline_reason,
-                s.software_name, s.version, r.room_name,
+                v.vendor_name, sp.product_name, sv.version, r.room_name,
                 u.username as assigned_by_name
             FROM assignments a
-            JOIN software s ON a.software_id = s.id
+            JOIN software_versions sv ON a.version_id = sv.id
+            JOIN software_products sp ON sv.product_id = sp.id
+            JOIN vendors v ON sp.vendor_id = v.id
             JOIN rooms r ON a.room_id = r.id
             JOIN users u ON a.assigned_by = u.id
             WHERE a.assigned_to = ?
@@ -616,7 +846,14 @@ def my_assignments():
     users = []
     rooms = []
     if current_user.is_superuser:
-        cursor.execute('SELECT id, software_name, version FROM software ORDER BY software_name')
+        cursor.execute('''
+            SELECT sv.id, v.vendor_name, sp.product_name, sv.version, sv.is_latest
+            FROM software_versions sv
+            JOIN software_products sp ON sv.product_id = sp.id
+            JOIN vendors v ON sp.vendor_id = v.id
+            WHERE sv.is_latest = 1
+            ORDER BY v.vendor_name, sp.product_name
+        ''')
         software_list = cursor.fetchall()
         cursor.execute('SELECT id, username FROM users ORDER BY username')
         users = cursor.fetchall()
@@ -652,10 +889,9 @@ def complete_assignment(assignment_id):
         
         # Also create the installation (or ignore if already exists)
         cursor.execute('''
-            INSERT OR IGNORE INTO installations (software_id, room_id, installed_version, updated_by)
-            VALUES (?, ?, ?, ?)
-        ''', (assignment['software_id'], assignment['room_id'], 
-              request.form.get('version', ''), current_user.username))
+            INSERT OR IGNORE INTO installations (version_id, room_id, updated_by)
+            VALUES (?, ?, ?)
+        ''', (assignment['version_id'], assignment['room_id'], current_user.username))
         
         conn.commit()
         flash('Assignment marked as completed!', 'success')
@@ -763,21 +999,21 @@ def assign_installation():
         conn = get_db()
         cursor = conn.cursor()
         
-        software_ids = request.form.getlist('software_ids')
+        version_ids = request.form.getlist('version_ids')
         assigned_to_ids = request.form.getlist('assigned_to_ids')
         room_ids = request.form.getlist('room_ids')
         due_date = request.form.get('due_date')
         notes = request.form.get('notes', '')
         
         assignment_count = 0
-        # Create assignment for each combination of software, user, and room
-        for software_id in software_ids:
+        # Create assignment for each combination of version, user, and room
+        for version_id in version_ids:
             for assigned_to in assigned_to_ids:
                 for room_id in room_ids:
                     cursor.execute('''
-                        INSERT INTO assignments (software_id, room_id, assigned_to, assigned_by, due_date, notes)
+                        INSERT INTO assignments (version_id, room_id, assigned_to, assigned_by, due_date, notes)
                         VALUES (?, ?, ?, ?, ?, ?)
-                    ''', (software_id, room_id, assigned_to, current_user.id, due_date, notes))
+                    ''', (version_id, room_id, assigned_to, current_user.id, due_date, notes))
                     assignment_count += 1
         
         conn.commit()
@@ -794,7 +1030,13 @@ def assign_installation():
     # GET request - show assignment form
     conn = get_db()
     cursor = conn.cursor()
-    cursor.execute('SELECT id, software_name, version FROM software ORDER BY software_name')
+    cursor.execute('''\n        SELECT sv.id, v.vendor_name, sp.product_name, sv.version
+        FROM software_versions sv
+        JOIN software_products sp ON sv.product_id = sp.id
+        JOIN vendors v ON sp.vendor_id = v.id
+        WHERE sv.is_latest = 1
+        ORDER BY v.vendor_name, sp.product_name
+    ''')
     software_list = cursor.fetchall()
     cursor.execute('SELECT id, room_name FROM rooms ORDER BY room_name')
     rooms = cursor.fetchall()
@@ -805,12 +1047,12 @@ def assign_installation():
     return render_template('assign_installation.html', software_list=software_list, 
                           rooms=rooms, users=users)
 
-@app.route('/download/<int:software_id>')
+@app.route('/download/<int:version_id>')
 @login_required
-def download_installer(software_id):
+def download_installer(version_id):
     conn = get_db()
     cursor = conn.cursor()
-    cursor.execute('SELECT installer_path, installer_filename FROM software WHERE id = ?', (software_id,))
+    cursor.execute('SELECT installer_path, installer_filename FROM software_versions WHERE id = ?', (version_id,))
     software = cursor.fetchone()
     conn.close()
     

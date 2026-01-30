@@ -70,6 +70,7 @@
         <ul class="nav-menu">
             <li><a href="{{ url_for('index') }}">Dashboard</a></li>
             <li><a href="{{ url_for('software_list') }}">Software</a></li>
+            <li><a href="{{ url_for('vendors_list') }}">Vendors</a></li>
             <li><a href="{{ url_for('rooms_list') }}">Rooms</a></li>
             <li><a href="{{ url_for('my_assignments') }}">{% if current_user.is_superuser %}Assignments{% else %}My Assignments{% endif %}{% if pending_assignments_count > 0 %}<span class="notification-badge">{{ pending_assignments_count }}</span>{% endif %}</a></li>
             {% if current_user.is_superuser %}
@@ -136,11 +137,10 @@
                                 {% set item_status = 'critical' if software.days_since_update > update_policy_days and not software.is_long_life else ('warning' if software.days_since_update > update_policy_days - 30 else '') %}
                                 <div class="software-item {{ item_status }}">
                                     <div>
-                                        <strong>{{ software.software_name }}</strong>
-                                        {% if software.vendor %}<span style="color: #666;"> - {{ software.vendor }}</span>{% endif %}
+                                        <strong>{{ software.vendor_name }} - {{ software.product_name }}</strong>
                                         <br>
                                         <small style="color: #666;">
-                                            Version: {{ software.installed_version }} | 
+                                            Version: {{ software.version }} | 
                                             Last Updated: {{ software.last_updated[:10] if software.last_updated else 'Unknown' }} 
                                             {% if software.updated_by %}by {{ software.updated_by }}{% endif %}
                                         </small>
@@ -149,7 +149,7 @@
                                         {% if software.is_long_life %}
                                         <div style="display: flex; gap: 0.5rem; align-items: center; justify-content: flex-end;">
                                             <span class="badge badge-info" title="{{ software.long_life_reason }}">Long-Life Exception</span>
-                                            <form method="post" action="{{ url_for('remove_long_life', installation_id=software.installation_id) }}" style="display:inline;" onsubmit="return confirm('Remove long-life exception for {{ software.software_name }}?');">
+                                            <form method="post" action="{{ url_for('remove_long_life', installation_id=software.installation_id) }}" style="display:inline;" onsubmit="return confirm('Remove long-life exception for {{ software.product_name }}?');">
                                                 <button type="submit" class="btn-sm btn-outline">Remove Exception</button>
                                             </form>
                                         </div>

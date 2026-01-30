@@ -14,6 +14,7 @@
         <ul class="nav-menu">
             <li><a href="{{ url_for('index') }}">Dashboard</a></li>
             <li><a href="{{ url_for('software_list') }}">Software</a></li>
+            <li><a href="{{ url_for('vendors_list') }}">Vendors</a></li>
             <li><a href="{{ url_for('rooms_list') }}">Rooms</a></li>
             <li><a href="{{ url_for('my_assignments') }}">{% if current_user.is_superuser %}Assignments{% else %}My Assignments{% endif %}{% if pending_assignments_count > 0 %}<span class="notification-badge">{{ pending_assignments_count }}</span>{% endif %}</a></li>
             {% if current_user.is_superuser %}
@@ -54,8 +55,8 @@
             <table class="data-table">
                 <thead>
                     <tr>
-                        <th>Software</th>
                         <th>Vendor</th>
+                        <th>Product</th>
                         <th>Installed Version</th>
                         <th>Latest Version</th>
                         <th>Last Updated</th>
@@ -71,9 +72,9 @@
                     {% if installations %}
                         {% for inst in installations %}
                         <tr {% if inst.days_since_update > update_policy_days and not inst.is_long_life %}class="row-warning"{% endif %}>
-                            <td><strong>{{ inst.software_name }}</strong></td>
-                            <td>{{ inst.vendor or '-' }}</td>
-                            <td>{{ inst.installed_version }}</td>
+                            <td>{{ inst.vendor_name }}</td>
+                            <td><strong>{{ inst.product_name }}</strong></td>
+                            <td>{{ inst.version }}</td>
                             <td>
                                 {% if inst.installed_version != inst.latest_version %}
                                 <span class="badge badge-warning">{{ inst.latest_version }}</span>
