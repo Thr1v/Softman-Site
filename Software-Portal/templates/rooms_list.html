@@ -1,0 +1,80 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Rooms - Software Management Portal</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+    <nav class="navbar">
+        <div class="nav-brand">
+            <h1>🖥️ Software Management Portal</h1>
+        </div>
+        <ul class="nav-menu">
+            <li><a href="{{ url_for('index') }}">Dashboard</a></li>
+            <li><a href="{{ url_for('software_list') }}">Software</a></li>
+            <li><a href="{{ url_for('rooms_list') }}" class="active">Rooms</a></li>
+            <li><a href="{{ url_for('update_requests') }}">Updates</a></li>
+        </ul>
+    </nav>
+
+    <div class="container">
+        <div class="page-header">
+            <h2>Rooms & Locations</h2>
+            <button class="btn btn-primary" onclick="showAddRoomModal()">➕ Add New Room</button>
+        </div>
+
+        <div class="rooms-grid">
+            {% for room in rooms %}
+            <div class="room-card">
+                <h3>{{ room.room_name }}</h3>
+                <p><strong>Building:</strong> {{ room.building or 'N/A' }}</p>
+                <p><strong>Floor:</strong> {{ room.floor or 'N/A' }}</p>
+                <p><strong>Software Installed:</strong> {{ room.software_count }}</p>
+                <a href="{{ url_for('index', room=room.room_name) }}" class="btn-sm btn-primary">View Installations</a>
+            </div>
+            {% endfor %}
+        </div>
+    </div>
+
+    <!-- Add Room Modal -->
+    <div id="addRoomModal" class="modal">
+        <div class="modal-content">
+            <span class="close" onclick="closeModal('addRoomModal')">&times;</span>
+            <h2>Add New Room</h2>
+            <form method="post" action="{{ url_for('add_room') }}">
+                <div class="form-group">
+                    <label>Room Name *</label>
+                    <input type="text" name="room_name" required placeholder="e.g., Lab 101">
+                </div>
+                <div class="form-group">
+                    <label>Building</label>
+                    <input type="text" name="building" placeholder="e.g., Main Building">
+                </div>
+                <div class="form-group">
+                    <label>Floor</label>
+                    <input type="text" name="floor" placeholder="e.g., 1st Floor">
+                </div>
+                <button type="submit" class="btn btn-primary">Add Room</button>
+            </form>
+        </div>
+    </div>
+
+    <script>
+        function showAddRoomModal() {
+            document.getElementById('addRoomModal').style.display = 'block';
+        }
+
+        function closeModal(modalId) {
+            document.getElementById(modalId).style.display = 'none';
+        }
+
+        window.onclick = function(event) {
+            if (event.target.classList.contains('modal')) {
+                event.target.style.display = 'none';
+            }
+        }
+    </script>
+</body>
+</html>

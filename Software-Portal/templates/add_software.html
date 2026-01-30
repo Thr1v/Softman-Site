@@ -1,0 +1,88 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Add Software - Software Management Portal</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+    <nav class="navbar">
+        <div class="nav-brand">
+            <h1>🖥️ Software Management Portal</h1>
+        </div>
+        <ul class="nav-menu">
+            <li><a href="{{ url_for('index') }}">Dashboard</a></li>
+            <li><a href="{{ url_for('software_list') }}" class="active">Software</a></li>
+            <li><a href="{{ url_for('rooms_list') }}">Rooms</a></li>
+            <li><a href="{{ url_for('update_requests') }}">Updates</a></li>
+        </ul>
+    </nav>
+
+    <div class="container">
+        <div class="page-header">
+            <h2>Add New Software</h2>
+        </div>
+
+        <div class="form-container">
+            <form method="post" enctype="multipart/form-data" class="software-form">
+                <div class="form-row">
+                    <div class="form-group">
+                        <label>Software Name *</label>
+                        <input type="text" name="software_name" required>
+                    </div>
+                    <div class="form-group">
+                        <label>Version *</label>
+                        <input type="text" name="version" required>
+                    </div>
+                </div>
+
+                <div class="form-row">
+                    <div class="form-group">
+                        <label>Vendor</label>
+                        <input type="text" name="vendor">
+                    </div>
+                    <div class="form-group">
+                        <label>License Type</label>
+                        <select name="license_type">
+                            <option value="">Select...</option>
+                            <option value="Site">Site License</option>
+                            <option value="Volume">Volume License</option>
+                            <option value="Per-User">Per-User</option>
+                            <option value="Per-Device">Per-Device</option>
+                            <option value="Free">Free/Open Source</option>
+                        </select>
+                    </div>
+                </div>
+
+                <div class="form-row">
+                    <div class="form-group">
+                        <label>License Key</label>
+                        <input type="text" name="license_key" placeholder="Enter license key if applicable">
+                    </div>
+                    <div class="form-group">
+                        <label>License Count</label>
+                        <input type="number" name="license_count" value="0" placeholder="Number of licenses (-1 for unlimited)">
+                    </div>
+                </div>
+
+                <div class="form-group">
+                    <label>Description</label>
+                    <textarea name="description" rows="3" placeholder="Software description and notes"></textarea>
+                </div>
+
+                <div class="form-group">
+                    <label>Installer File</label>
+                    <input type="file" name="installer" accept=".exe,.msi,.dmg,.pkg,.deb,.rpm,.zip">
+                    <small class="text-muted">Max 500MB. Supported formats: .exe, .msi, .dmg, .pkg, .deb, .rpm, .zip</small>
+                </div>
+
+                <div class="form-actions">
+                    <button type="submit" class="btn btn-primary">Add Software</button>
+                    <a href="{{ url_for('software_list') }}" class="btn btn-outline">Cancel</a>
+                </div>
+            </form>
+        </div>
+    </div>
+</body>
+</html>

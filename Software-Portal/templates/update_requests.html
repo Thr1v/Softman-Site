@@ -1,0 +1,253 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Update Requests - Software Management Portal</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+    <nav class="navbar">
+        <div class="nav-brand">
+            <h1>🖥️ Software Management Portal</h1>
+        </div>
+        <ul class="nav-menu">
+            <li><a href="{{ url_for('index') }}">Dashboard</a></li>
+            <li><a href="{{ url_for('software_list') }}">Software</a></li>
+            <li><a href="{{ url_for('rooms_list') }}">Rooms</a></li>
+            <li><a href="{{ url_for('update_requests') }}" class="active">Updates</a></li>
+        </ul>
+    </nav>
+
+    <div class="container">
+        {% with messages = get_flashed_messages(with_categories=true) %}
+            {% if messages %}
+                {% for category, message in messages %}
+                <div class="alert alert-{{ category }}">{{ message }}</div>
+                {% endfor %}
+            {% endif %}
+        {% endwith %}
+
+        <div class="page-header">
+            <h2>Update Requests</h2>
+        </div>
+
+        <div class="filters-section">
+            <form method="get" class="filters-form">
+                <div class="filter-group">
+                    <label>Status:</label>
+                    <select name="status" onchange="this.form.submit()">
+                        <option value="">All Statuses</option>
+                        <option value="Pending" {% if status_filter == 'Pending' %}selected{% endif %}>Pending</option>
+                        <option value="Assigned" {% if status_filter == 'Assigned' %}selected{% endif %}>Assigned</option>
+                        <option value="Approved" {% if status_filter == 'Approved' %}selected{% endif %}>Approved</option>
+                        <option value="Declined" {% if status_filter == 'Declined' %}selected{% endif %}>Declined</option>
+                        <option value="Completed" {% if status_filter == 'Completed' %}selected{% endif %}>Completed</option>
+                    </select>
+                </div>
+                <a href="{{ url_for('update_requests') }}" class="btn btn-outline">Clear Filter</a>
+            </form>
+        </div>
+
+        <div class="table-container">
+            <table class="data-table">
+                <thead>
+                    <tr>
+                        <th>ID</th>
+                        <th>Software</th>
+                        <th>Room</th>
+                        <th>Version Change</th>
+                        <th>Priority</th>
+                        <th>Status</th>
+                        <th>Requested By</th>
+                        <th>Requested Date</th>
+                        <th>Assigned To</th>
+                        <th>Actions</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for req in requests %}
+                    <tr>
+                        <td>{{ req.id }}</td>
+                        <td>
+                            <strong>{{ req.software_name }}</strong>
+                        </td>
+                        <td>
+                            <strong>{{ req.room_name }}</strong>
+                            <div class="text-muted">{{ req.building }}</div>
+                        </td>
+                        <td>
+                            {{ req.from_version }} → {{ req.to_version }}
+                        </td>
+                        <td>
+                            <span class="badge badge-priority-{{ req.priority|lower }}">
+                                {{ req.priority }}
+                            </span>
+                        </td>
+                        <td>
+                            <span class="badge badge-status-{{ req.status|lower }}">
+                                {{ req.status }}
+                            </span>
+                        </td>
+                        <td>{{ req.requested_by }}</td>
+                        <td>{{ req.requested_at[:16] if req.requested_at else 'N/A' }}</td>
+                        <td>{{ req.assigned_to or 'Unassigned' }}</td>
+                        <td>
+                            <div class="action-buttons">
+                                {% if req.status == 'Pending' %}
+                                <button class="btn-sm btn-primary" onclick="assignUpdate({{ req.id }}, '{{ req.software_name }}')">
+                                    Assign
+                                </button>
+                                <button class="btn-sm btn-success" onclick="approveUpdate({{ req.id }}, '{{ req.software_name }}')">
+                                    Approve
+                                </button>
+                                <button class="btn-sm btn-danger" onclick="declineUpdate({{ req.id }}, '{{ req.software_name }}')">
+                                    Decline
+                                </button>
+                                {% elif req.status == 'Assigned' or req.status == 'Approved' %}
+                                <button class="btn-sm btn-success" onclick="completeUpdate({{ req.id }}, '{{ req.software_name }}', '{{ req.to_version }}')">
+                                    Mark Complete
+                                </button>
+                                <button class="btn-sm btn-danger" onclick="declineUpdate({{ req.id }}, '{{ req.software_name }}')">
+                                    Decline
+                                </button>
+                                {% elif req.status == 'Declined' %}
+                                <span class="text-muted">{{ req.decline_reason or 'No reason provided' }}</span>
+                                {% elif req.status == 'Completed' %}
+                                <span class="text-success">✓ Completed by {{ req.completed_by }}</span>
+                                {% endif %}
+                            </div>
+                        </td>
+                    </tr>
+                    {% else %}
+                    <tr>
+                        <td colspan="10" class="text-center">No update requests found.</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+    <!-- Assign Modal -->
+    <div id="assignModal" class="modal">
+        <div class="modal-content">
+            <span class="close" onclick="closeModal('assignModal')">&times;</span>
+            <h2>Assign Update Request</h2>
+            <form method="post" id="assignForm">
+                <div class="form-group">
+                    <label>Software:</label>
+                    <input type="text" id="assign_software_name" readonly>
+                </div>
+                <div class="form-group">
+                    <label>Assign To:</label>
+                    <input type="text" name="assigned_to" required placeholder="Enter technician name">
+                </div>
+                <button type="submit" class="btn btn-primary">Assign</button>
+            </form>
+        </div>
+    </div>
+
+    <!-- Approve Modal -->
+    <div id="approveModal" class="modal">
+        <div class="modal-content">
+            <span class="close" onclick="closeModal('approveModal')">&times;</span>
+            <h2>Approve Update Request</h2>
+            <form method="post" id="approveForm">
+                <div class="form-group">
+                    <label>Software:</label>
+                    <input type="text" id="approve_software_name" readonly>
+                </div>
+                <div class="form-group">
+                    <label>Approved By:</label>
+                    <input type="text" name="approved_by" required placeholder="Your name">
+                </div>
+                <button type="submit" class="btn btn-success">Approve Update</button>
+            </form>
+        </div>
+    </div>
+
+    <!-- Decline Modal -->
+    <div id="declineModal" class="modal">
+        <div class="modal-content">
+            <span class="close" onclick="closeModal('declineModal')">&times;</span>
+            <h2>Decline Update Request</h2>
+            <form method="post" id="declineForm">
+                <div class="form-group">
+                    <label>Software:</label>
+                    <input type="text" id="decline_software_name" readonly>
+                </div>
+                <div class="form-group">
+                    <label>Reason for Declining:</label>
+                    <textarea name="decline_reason" rows="3" required placeholder="Explain why this update is being declined..."></textarea>
+                </div>
+                <button type="submit" class="btn btn-danger">Decline Update</button>
+            </form>
+        </div>
+    </div>
+
+    <!-- Complete Modal -->
+    <div id="completeModal" class="modal">
+        <div class="modal-content">
+            <span class="close" onclick="closeModal('completeModal')">&times;</span>
+            <h2>Complete Update</h2>
+            <form method="post" id="completeForm">
+                <div class="form-group">
+                    <label>Software:</label>
+                    <input type="text" id="complete_software_name" readonly>
+                </div>
+                <div class="form-group">
+                    <label>New Version:</label>
+                    <input type="text" id="complete_version" readonly>
+                </div>
+                <div class="form-group">
+                    <label>Completed By:</label>
+                    <input type="text" name="completed_by" required placeholder="Your name">
+                </div>
+                <div class="form-group">
+                    <label>Notes:</label>
+                    <textarea name="notes" rows="3" placeholder="Any additional notes about the update..."></textarea>
+                </div>
+                <button type="submit" class="btn btn-success">Mark as Complete</button>
+            </form>
+        </div>
+    </div>
+
+    <script>
+        function assignUpdate(requestId, softwareName) {
+            document.getElementById('assign_software_name').value = softwareName;
+            document.getElementById('assignForm').action = `/updates/${requestId}/assign`;
+            document.getElementById('assignModal').style.display = 'block';
+        }
+
+        function approveUpdate(requestId, softwareName) {
+            document.getElementById('approve_software_name').value = softwareName;
+            document.getElementById('approveForm').action = `/updates/${requestId}/approve`;
+            document.getElementById('approveModal').style.display = 'block';
+        }
+
+        function declineUpdate(requestId, softwareName) {
+            document.getElementById('decline_software_name').value = softwareName;
+            document.getElementById('declineForm').action = `/updates/${requestId}/decline`;
+            document.getElementById('declineModal').style.display = 'block';
+        }
+
+        function completeUpdate(requestId, softwareName, version) {
+            document.getElementById('complete_software_name').value = softwareName;
+            document.getElementById('complete_version').value = version;
+            document.getElementById('completeForm').action = `/updates/${requestId}/complete`;
+            document.getElementById('completeModal').style.display = 'block';
+        }
+
+        function closeModal(modalId) {
+            document.getElementById(modalId).style.display = 'none';
+        }
+
+        window.onclick = function(event) {
+            if (event.target.classList.contains('modal')) {
+                event.target.style.display = 'none';
+            }
+        }
+    </script>
+</body>
+</html>
