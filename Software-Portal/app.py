@@ -41,7 +41,21 @@ def load_user(user_id):
     if user_data:
         return User(user_data['id'], user_data['username'], user_data['full_name'], user_data['is_superuser'])
     return None
-
+@app.context_processor
+def inject_pending_assignments():
+    """Make pending assignments count available to all templates"""
+    if current_user.is_authenticated:
+        conn = get_db()
+        cursor = conn.cursor()
+        cursor.execute('''
+            SELECT COUNT(*) as count 
+            FROM assignments 
+            WHERE assigned_to = ? AND status = 'pending'
+        ''', (current_user.id,))
+        result = cursor.fetchone()
+        conn.close()
+        return {'pending_assignments_count': result['count'] if result else 0}
+    return {'pending_assignments_count': 0}
 def superuser_required(f):
     @wraps(f)
     def decorated_function(*args, **kwargs):
@@ -464,11 +478,16 @@ def add_installation():
     cursor = conn.cursor()
     
     try:
-        cursor.execute('''
-            INSERT INTO installations (software_id, room_id, installed_version, updated_by)
-            VALUES (?, ?, ?, ?)
-        ''', (request.form['software_id'], request.form['room_id'], request.form['version'],
-              current_user.full_name or current_user.username))
+        software_id = request.form['software_id']
+        room_ids = request.form.getlist('room_ids')  # Get multiple room IDs
+        version = request.form['version']
+        
+        # Insert installation for each selected room
+        for room_id in room_ids:
+            cursor.execute('''
+                INSERT INTO installations (software_id, room_id, installed_version, updated_by)
+                VALUES (?, ?, ?, ?)
+            ''', (software_id, room_id, version, current_user.username))
         conn.commit()
         flash('Installation added successfully!', 'success')
     except sqlite3.IntegrityError:
@@ -536,6 +555,252 @@ def remove_long_life(installation_id):
     conn.close()
     flash('Long-life exception removed!', 'success')
     return redirect(url_for('index'))
+
+@app.route('/assignments')
+@login_required
+def my_assignments():
+    conn = get_db()
+    cursor = conn.cursor()
+    
+    if current_user.is_superuser:
+        # Superusers see ALL assignments
+        cursor.execute('''
+            SELECT 
+                a.id, a.due_date, a.status, a.notes, a.created_at, a.decline_reason, a.completed_at,
+                s.software_name, s.version, r.room_name,
+                u1.username as assigned_to_name,
+                u2.username as assigned_by_name
+            FROM assignments a
+            JOIN software s ON a.software_id = s.id
+            JOIN rooms r ON a.room_id = r.id
+            JOIN users u1 ON a.assigned_to = u1.id
+            JOIN users u2 ON a.assigned_by = u2.id
+            ORDER BY 
+                CASE a.status 
+                    WHEN 'pending' THEN 1 
+                    WHEN 'declined' THEN 2
+                    WHEN 'completed' THEN 3 
+                    ELSE 4 
+                END,
+                a.due_date, a.created_at DESC
+        ''')
+    else:
+        # Regular users see only their assignments
+        cursor.execute('''
+            SELECT 
+                a.id, a.due_date, a.status, a.notes, a.created_at, a.decline_reason,
+                s.software_name, s.version, r.room_name,
+                u.username as assigned_by_name
+            FROM assignments a
+            JOIN software s ON a.software_id = s.id
+            JOIN rooms r ON a.room_id = r.id
+            JOIN users u ON a.assigned_by = u.id
+            WHERE a.assigned_to = ?
+            ORDER BY 
+                CASE a.status 
+                    WHEN 'pending' THEN 1 
+                    WHEN 'completed' THEN 2 
+                    WHEN 'declined' THEN 3
+                    ELSE 4 
+                END,
+                a.due_date
+        ''', (current_user.id,))
+    
+    assignments = cursor.fetchall()
+    
+    # If superuser, get data for assignment creation
+    software_list = []
+    users = []
+    rooms = []
+    if current_user.is_superuser:
+        cursor.execute('SELECT id, software_name, version FROM software ORDER BY software_name')
+        software_list = cursor.fetchall()
+        cursor.execute('SELECT id, username FROM users ORDER BY username')
+        users = cursor.fetchall()
+        cursor.execute('SELECT id, room_name, building FROM rooms ORDER BY building, room_name')
+        rooms = cursor.fetchall()
+    
+    conn.close()
+    
+    return render_template('my_assignments.html', 
+                          assignments=assignments,
+                          software_list=software_list,
+                          users=users,
+                          rooms=rooms,
+                          now=datetime.now().strftime('%Y-%m-%d'))
+
+@app.route('/assignments/<int:assignment_id>/complete', methods=['POST'])
+@login_required
+def complete_assignment(assignment_id):
+    conn = get_db()
+    cursor = conn.cursor()
+    
+    # Verify assignment belongs to current user
+    cursor.execute('SELECT * FROM assignments WHERE id = ? AND assigned_to = ?', 
+                  (assignment_id, current_user.id))
+    assignment = cursor.fetchone()
+    
+    if assignment:
+        cursor.execute('''
+            UPDATE assignments 
+            SET status = 'completed', completed_at = ? 
+            WHERE id = ?
+        ''', (datetime.now().strftime('%Y-%m-%d %H:%M:%S'), assignment_id))
+        
+        # Also create the installation (or ignore if already exists)
+        cursor.execute('''
+            INSERT OR IGNORE INTO installations (software_id, room_id, installed_version, updated_by)
+            VALUES (?, ?, ?, ?)
+        ''', (assignment['software_id'], assignment['room_id'], 
+              request.form.get('version', ''), current_user.username))
+        
+        conn.commit()
+        flash('Assignment marked as completed!', 'success')
+    else:
+        flash('Assignment not found!', 'error')
+    
+    conn.close()
+    return redirect(url_for('my_assignments'))
+
+@app.route('/assignments/<int:assignment_id>/incomplete', methods=['POST'])
+@login_required
+def incomplete_assignment(assignment_id):
+    conn = get_db()
+    cursor = conn.cursor()
+    
+    # Verify assignment belongs to current user
+    cursor.execute('SELECT * FROM assignments WHERE id = ? AND assigned_to = ?', 
+                  (assignment_id, current_user.id))
+    assignment = cursor.fetchone()
+    
+    if assignment and assignment['status'] == 'completed':
+        cursor.execute('''
+            UPDATE assignments 
+            SET status = 'pending', completed_at = NULL 
+            WHERE id = ?
+        ''', (assignment_id,))
+        
+        # Optionally delete the installation that was created
+        # cursor.execute('DELETE FROM installations WHERE software_id = ? AND room_id = ? AND updated_by = ? ORDER BY id DESC LIMIT 1',
+        #               (assignment['software_id'], assignment['room_id'], current_user.username))
+        
+        conn.commit()
+        flash('Assignment marked as incomplete!', 'info')
+    else:
+        flash('Assignment not found or not completed!', 'error')
+    
+    conn.close()
+    return redirect(url_for('my_assignments'))
+
+@app.route('/assignments/<int:assignment_id>/reschedule', methods=['POST'])
+@login_required
+def reschedule_assignment(assignment_id):
+    conn = get_db()
+    cursor = conn.cursor()
+    
+    # Verify assignment belongs to current user
+    cursor.execute('SELECT * FROM assignments WHERE id = ? AND assigned_to = ?', 
+                  (assignment_id, current_user.id))
+    assignment = cursor.fetchone()
+    
+    if assignment:
+        new_date = request.form.get('new_date')
+        if new_date:
+            cursor.execute('''
+                UPDATE assignments 
+                SET due_date = ? 
+                WHERE id = ?
+            ''', (new_date, assignment_id))
+            
+            conn.commit()
+            flash('Assignment due date updated!', 'success')
+        else:
+            flash('Please provide a valid date!', 'error')
+    else:
+        flash('Assignment not found!', 'error')
+    
+    conn.close()
+    return redirect(url_for('my_assignments'))
+
+@app.route('/assignments/<int:assignment_id>/decline', methods=['POST'])
+@login_required
+def decline_assignment(assignment_id):
+    conn = get_db()
+    cursor = conn.cursor()
+    
+    # Verify assignment belongs to current user
+    cursor.execute('SELECT * FROM assignments WHERE id = ? AND assigned_to = ?', 
+                  (assignment_id, current_user.id))
+    assignment = cursor.fetchone()
+    
+    if assignment and assignment['status'] == 'pending':
+        decline_reason = request.form.get('decline_reason', '').strip()
+        if decline_reason:
+            cursor.execute('''
+                UPDATE assignments 
+                SET status = 'declined', decline_reason = ? 
+                WHERE id = ?
+            ''', (decline_reason, assignment_id))
+            
+            conn.commit()
+            flash('Assignment declined!', 'info')
+        else:
+            flash('Please provide a reason for declining!', 'error')
+    else:
+        flash('Assignment not found or cannot be declined!', 'error')
+    
+    conn.close()
+    return redirect(url_for('my_assignments'))
+
+@app.route('/assign-installation', methods=['GET', 'POST'])
+@login_required
+@superuser_required
+def assign_installation():
+    if request.method == 'POST':
+        conn = get_db()
+        cursor = conn.cursor()
+        
+        software_ids = request.form.getlist('software_ids')
+        assigned_to_ids = request.form.getlist('assigned_to_ids')
+        room_ids = request.form.getlist('room_ids')
+        due_date = request.form.get('due_date')
+        notes = request.form.get('notes', '')
+        
+        assignment_count = 0
+        # Create assignment for each combination of software, user, and room
+        for software_id in software_ids:
+            for assigned_to in assigned_to_ids:
+                for room_id in room_ids:
+                    cursor.execute('''
+                        INSERT INTO assignments (software_id, room_id, assigned_to, assigned_by, due_date, notes)
+                        VALUES (?, ?, ?, ?, ?, ?)
+                    ''', (software_id, room_id, assigned_to, current_user.id, due_date, notes))
+                    assignment_count += 1
+        
+        conn.commit()
+        conn.close()
+        
+        flash(f'Created {assignment_count} assignment(s) successfully!', 'success')
+        
+        # Check if request came from assignments page (has referer)
+        referer = request.headers.get('Referer', '')
+        if 'assignments' in referer:
+            return redirect(url_for('my_assignments'))
+        return redirect(url_for('index'))
+    
+    # GET request - show assignment form
+    conn = get_db()
+    cursor = conn.cursor()
+    cursor.execute('SELECT id, software_name, version FROM software ORDER BY software_name')
+    software_list = cursor.fetchall()
+    cursor.execute('SELECT id, room_name FROM rooms ORDER BY room_name')
+    rooms = cursor.fetchall()
+    cursor.execute('SELECT id, username, full_name FROM users ORDER BY username')
+    users = cursor.fetchall()
+    conn.close()
+    
+    return render_template('assign_installation.html', software_list=software_list, 
+                          rooms=rooms, users=users)
 
 @app.route('/download/<int:software_id>')
 @login_required

@@ -15,6 +15,7 @@
             <li><a href="{{ url_for('index') }}">Dashboard</a></li>
             <li><a href="{{ url_for('software_list') }}" class="active">Software</a></li>
             <li><a href="{{ url_for('rooms_list') }}">Rooms</a></li>
+            <li><a href="{{ url_for('my_assignments') }}">{% if current_user.is_superuser %}Assignments{% else %}My Assignments{% endif %}{% if pending_assignments_count > 0 %}<span class="notification-badge">{{ pending_assignments_count }}</span>{% endif %}</a></li>
             {% if current_user.is_superuser %}
             <li><a href="{{ url_for('compliance_report') }}">Compliance</a></li>
             <li><a href="{{ url_for('users_list') }}">Users</a></li>

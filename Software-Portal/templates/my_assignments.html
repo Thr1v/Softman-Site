@@ -1,0 +1,308 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>My Assignments - Software Management Portal</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+    <nav class="navbar">
+        <div class="nav-brand">
+            <h1>🖥️ Software Management Portal</h1>
+        </div>
+        <ul class="nav-menu">
+            <li><a href="{{ url_for('index') }}">Dashboard</a></li>
+            <li><a href="{{ url_for('software_list') }}">Software</a></li>
+            <li><a href="{{ url_for('rooms_list') }}">Rooms</a></li>
+            <li><a href="{{ url_for('my_assignments') }}" class="active">{% if current_user.is_superuser %}Assignments{% else %}My Assignments{% endif %}{% if pending_assignments_count > 0 %}<span class="notification-badge">{{ pending_assignments_count }}</span>{% endif %}</a></li>
+            {% if current_user.is_superuser %}
+            <li><a href="{{ url_for('compliance_report') }}">Compliance</a></li>
+            <li><a href="{{ url_for('users_list') }}">Users</a></li>
+            {% endif %}
+            <li class="user-info">
+                {{ current_user.username }}
+                {% if current_user.is_superuser %}
+                <span class="badge badge-admin">Admin</span>
+                {% endif %}
+            </li>
+            <li><a href="{{ url_for('logout') }}" class="btn-sm btn-secondary">Logout</a></li>
+        </ul>
+    </nav>
+
+    <div class="container">
+        {% with messages = get_flashed_messages(with_categories=true) %}
+            {% if messages %}
+                {% for category, message in messages %}
+                <div class="alert alert-{{ category }}">{{ message }}</div>
+                {% endfor %}
+            {% endif %}
+        {% endwith %}
+
+        <div class="page-header">
+            <h2>📋 {% if current_user.is_superuser %}All Assignments{% else %}My Installation Assignments{% endif %}</h2>
+            {% if current_user.is_superuser %}
+            <button class="btn btn-primary" onclick="showAssignModal()">
+                ➕ Create Assignment
+            </button>
+            {% endif %}
+        </div>
+        
+        <div class="header-stats" style="margin-bottom: 1.5rem;">
+            <div class="stat-card warning">
+                <div class="stat-value">{{ assignments|selectattr('status', 'equalto', 'pending')|list|length }}</div>
+                <div class="stat-label">Pending</div>
+            </div>
+            <div class="stat-card" style="border-left-color: #28a745;">
+                <div class="stat-value" style="color: #28a745;">{{ assignments|selectattr('status', 'equalto', 'completed')|list|length }}</div>
+                <div class="stat-label">Completed</div>
+            </div>
+            <div class="stat-card" style="border-left-color: #dc3545;">
+                <div class="stat-value" style="color: #dc3545;">{{ assignments|selectattr('status', 'equalto', 'declined')|list|length }}</div>
+                <div class="stat-label">Declined</div>
+            </div>
+        </div>
+
+        <div class="table-container">
+            <table class="data-table">
+                <thead>
+                    <tr>
+                        <th>Software</th>
+                        <th>Version</th>
+                        <th>Room</th>
+                        {% if current_user.is_superuser %}<th>Assigned To</th>{% endif %}
+                        <th>Due Date</th>
+                        <th>Assigned By</th>
+                        <th>Status</th>
+                        <th>Notes</th>
+                        <th>Actions</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% if assignments %}
+                        {% for assignment in assignments %}
+                        <tr {% if assignment.status == 'pending' and assignment.due_date and assignment.due_date < now %}class="row-warning"{% elif assignment.status == 'declined' %}style="background-color: #ffebee;"{% endif %}>
+                            <td><strong>{{ assignment.software_name }}</strong></td>
+                            <td>{{ assignment.version }}</td>
+                            <td>{{ assignment.room_name }}</td>
+                            {% if current_user.is_superuser %}
+                            <td>{{ assignment.assigned_to_name }}</td>
+                            {% endif %}
+                            <td>
+                                {% if assignment.due_date %}
+                                {{ assignment.due_date }}
+                                {% if assignment.status == 'pending' and assignment.due_date < now %}
+                                <span class="badge badge-danger">OVERDUE</span>
+                                {% endif %}
+                                {% else %}
+                                -
+                                {% endif %}
+                            </td>
+                            <td>{{ assignment.assigned_by_name }}</td>
+                            <td>
+                                {% if assignment.status == 'pending' %}
+                                <span class="badge badge-warning">Pending</span>
+                                {% elif assignment.status == 'completed' %}
+                                <span class="badge badge-success">Completed</span>
+                                {% elif assignment.status == 'declined' %}
+                                <span class="badge badge-danger">Declined</span>
+                                {% endif %}
+                            </td>
+                            <td>{{ assignment.notes or '-' }}</td>
+                            <td>
+                                {% if assignment.status == 'pending' %}
+                                {% if current_user.is_superuser and assignment.assigned_to_name != current_user.username %}
+                                <span class="text-muted">Assigned to {{ assignment.assigned_to_name }}</span>
+                                {% else %}
+                                <div style="display: flex; gap: 5px; flex-wrap: wrap;">
+                                    <form method="post" action="{{ url_for('complete_assignment', assignment_id=assignment.id) }}" style="display:inline;">
+                                        <input type="hidden" name="version" value="{{ assignment.version }}">
+                                        <button type="submit" class="btn-sm btn-success" onclick="return confirm('Mark as completed and create installation?')">
+                                            ✓ Complete
+                                        </button>
+                                    </form>
+                                    <button type="button" class="btn-sm btn-info" onclick="showRescheduleModal({{ assignment.id }}, '{{ assignment.due_date }}')">
+                                        📅 Reschedule
+                                    </button>
+                                    <button type="button" class="btn-sm btn-danger" onclick="showDeclineModal({{ assignment.id }})">
+                                        ✗ Decline
+                                    </button>
+                                </div>
+                                {% endif %}
+                                {% elif assignment.status == 'completed' %}
+                                <div style="display: flex; gap: 5px; align-items: center; flex-wrap: wrap;">
+                                    <span class="badge badge-info">{{ assignment.completed_at[:10] if assignment.completed_at else '-' }}</span>
+                                    {% if current_user.is_superuser and assignment.assigned_to_name != current_user.username %}
+                                    <span class="text-muted">by {{ assignment.assigned_to_name }}</span>
+                                    {% else %}
+                                    <form method="post" action="{{ url_for('incomplete_assignment', assignment_id=assignment.id) }}" style="display:inline;">
+                                        <button type="submit" class="btn-sm btn-secondary" onclick="return confirm('Mark as incomplete? This will revert to pending status.')" style="font-size: 0.75rem; padding: 4px 8px;">
+                                            ↩ Incomplete
+                                        </button>
+                                    </form>
+                                    {% endif %}
+                                </div>
+                                {% elif assignment.status == 'declined' %}
+                                <div class="text-muted" style="font-size: 0.85rem;">
+                                    <strong>Reason:</strong> {{ assignment.decline_reason }}
+                                    {% if current_user.is_superuser and assignment.assigned_to_name != current_user.username %}
+                                    <br><span style="font-size: 0.75rem;">(Declined by {{ assignment.assigned_to_name }})</span>
+                                    {% endif %}
+                                </div>
+                                {% endif %}
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    {% else %}
+                        <tr>
+                            <td colspan="8" class="text-center">
+                                No assignments yet! 🎉
+                            </td>
+                        </tr>
+                    {% endif %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+    <!-- Reschedule Modal -->
+    <div id="rescheduleModal" class="modal">
+        <div class="modal-content">
+            <span class="close" onclick="closeModal('rescheduleModal')">&times;</span>
+            <h2>Reschedule Assignment</h2>
+            <form id="rescheduleForm" method="post">
+                <div class="form-group">
+                    <label>New Due Date:</label>
+                    <input type="date" name="new_date" id="newDueDate" required class="form-control">
+                </div>
+                <div class="form-actions">
+                    <button type="submit" class="btn btn-primary">Update Date</button>
+                    <button type="button" class="btn btn-secondary" onclick="closeModal('rescheduleModal')">Cancel</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Decline Modal -->
+    <div id="declineModal" class="modal">
+        <div class="modal-content">
+            <span class="close" onclick="closeModal('declineModal')">&times;</span>
+            <h2>Decline Assignment</h2>
+            <p style="color: #666; margin-bottom: 1rem;">Please provide a reason for declining this assignment. This will be visible to administrators.</p>
+            <form id="declineForm" method="post">
+                <div class="form-group">
+                    <label>Reason for Declining: <span style="color: red;">*</span></label>
+                    <textarea name="decline_reason" id="declineReason" required class="form-control" rows="4" placeholder="Enter your reason for declining..."></textarea>
+                </div>
+                <div class="form-actions">
+                    <button type="submit" class="btn btn-danger">Decline Assignment</button>
+                    <button type="button" class="btn btn-secondary" onclick="closeModal('declineModal')">Cancel</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    {% if current_user.is_superuser %}
+    <!-- Create Assignment Modal -->
+    <div id="assignModal" class="modal">
+        <div class="modal-content" style="max-width: 600px;">
+            <span class="close" onclick="closeModal('assignModal')">&times;</span>
+            <h2>Create New Assignment</h2>
+            <form action="{{ url_for('assign_installation') }}" method="post">
+                <div class="form-group">
+                    <label>Software: <span style="color: red;">*</span></label>
+                    <div style="border: 1px solid #ddd; border-radius: 5px; padding: 10px; max-height: 200px; overflow-y: auto; background: white;">
+                        {% for sw in software_list %}
+                        <div style="margin-bottom: 8px;">
+                            <label style="display: flex; align-items: center; cursor: pointer; font-weight: normal;">
+                                <input type="checkbox" name="software_ids" value="{{ sw.id }}" style="margin-right: 8px;">
+                                <span>{{ sw.software_name }} (v{{ sw.version }})</span>
+                            </label>
+                        </div>
+                        {% endfor %}
+                    </div>
+                    <small style="color: #666;">Select one or more software</small>
+                </div>
+                
+                <div class="form-group">
+                    <label>Assign To: <span style="color: red;">*</span></label>
+                    <div style="border: 1px solid #ddd; border-radius: 5px; padding: 10px; max-height: 200px; overflow-y: auto; background: white;">
+                        {% for user in users %}
+                        <div style="margin-bottom: 8px;">
+                            <label style="display: flex; align-items: center; cursor: pointer; font-weight: normal;">
+                                <input type="checkbox" name="assigned_to_ids" value="{{ user.id }}" style="margin-right: 8px;">
+                                <span>{{ user.username }}</span>
+                            </label>
+                        </div>
+                        {% endfor %}
+                    </div>
+                    <small style="color: #666;">Select one or more users</small>
+                </div>
+                
+                <div class="form-group">
+                    <label>Rooms (hold Ctrl/Cmd to select multiple): <span style="color: red;">*</span></label>
+                    <select name="room_ids" multiple required class="form-control" size="6" style="height: auto;">
+                        {% for room in rooms %}
+                        <option value="{{ room.id }}">{{ room.room_name }}{% if room.building %} - {{ room.building }}{% endif %}</option>
+                        {% endfor %}
+                    </select>
+                    <small style="color: #666;">Select one or more rooms for installation</small>
+                </div>
+                
+                <div class="form-group">
+                    <label>Due Date:</label>
+                    <input type="date" name="due_date" class="form-control">
+                </div>
+                
+                <div class="form-group">
+                    <label>Notes/Instructions:</label>
+                    <textarea name="notes" class="form-control" rows="3" placeholder="Any special instructions..."></textarea>
+                </div>
+                
+                <div class="form-actions">
+                    <button type="submit" class="btn btn-primary">Create Assignment</button>
+                    <button type="button" class="btn btn-secondary" onclick="closeModal('assignModal')">Cancel</button>
+                </div>
+            </form>
+        </div>
+    </div>
+    {% endif %}
+
+    <script>
+        function showRescheduleModal(assignmentId, currentDate) {
+            const modal = document.getElementById('rescheduleModal');
+            const form = document.getElementById('rescheduleForm');
+            const dateInput = document.getElementById('newDueDate');
+            
+            form.action = `/assignments/${assignmentId}/reschedule`;
+            dateInput.value = currentDate || '';
+            modal.style.display = 'block';
+        }
+        
+        function showDeclineModal(assignmentId) {
+            const modal = document.getElementById('declineModal');
+            const form = document.getElementById('declineForm');
+            const reasonInput = document.getElementById('declineReason');
+            
+            form.action = `/assignments/${assignmentId}/decline`;
+            reasonInput.value = '';
+            modal.style.display = 'block';
+        }
+        
+        function showAssignModal() {
+            document.getElementById('assignModal').style.display = 'block';
+        }
+        
+        function closeModal(modalId) {
+            document.getElementById(modalId).style.display = 'none';
+        }
+        
+        // Close modal when clicking outside
+        window.onclick = function(event) {
+            if (event.target.classList.contains('modal')) {
+                event.target.style.display = 'none';
+            }
+        }
+    </script>
+</body>
+</html>
