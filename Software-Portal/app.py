@@ -219,7 +219,7 @@ def compliance_report():
     for room in rooms:
         cursor.execute('''
             SELECT 
-                s.software_name, s.vendor, i.installed_version, i.last_updated,
+                i.id as installation_id, s.software_name, s.vendor, i.installed_version, i.last_updated,
                 CAST((julianday('now') - julianday(i.last_updated)) AS INTEGER) as days_since_update,
                 i.is_long_life, i.long_life_reason, i.updated_by
             FROM installations i
@@ -327,6 +327,7 @@ def add_software():
         
         installer_filename = None
         installer_path = None
+        installer_url = request.form.get('installer_url', '').strip()
         
         if 'installer' in request.files:
             file = request.files['installer']
@@ -336,15 +337,17 @@ def add_software():
                 file.save(filepath)
                 installer_filename = filename
                 installer_path = filepath
+                installer_url = None  # Clear URL if file is uploaded
         
         cursor.execute('''
             INSERT INTO software (software_name, version, vendor, license_key, 
-                                license_type, license_count, description, installer_filename, installer_path)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                                license_type, license_count, description, installer_filename, 
+                                installer_path, installer_url)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         ''', (request.form['software_name'], request.form['version'], request.form.get('vendor', ''),
               request.form.get('license_key', ''), request.form.get('license_type', ''),
               request.form.get('license_count', 0), request.form.get('description', ''),
-              installer_filename, installer_path))
+              installer_filename, installer_path, installer_url if installer_url else None))
         
         conn.commit()
         conn.close()

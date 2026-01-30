@@ -171,7 +171,7 @@
                                 
                                 {% if current_user.is_superuser %}
                                     {% if not inst.is_long_life and not inst.policy_compliant %}
-                                    <button class="btn-sm btn-warning" onclick="setLongLife({{ inst.installation_id }}, '{{ inst.software_name }}')">
+                                    <button class="btn-sm btn-warning" data-installation-id="{{ inst.installation_id }}" data-software-name="{{ inst.software_name }}" onclick="setLongLife(this.dataset.installationId, this.dataset.softwareName)">
                                         Grant Exception
                                     </button>
                                     {% elif inst.is_long_life %}

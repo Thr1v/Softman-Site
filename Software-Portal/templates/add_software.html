@@ -82,10 +82,29 @@
                 </div>
 
                 <div class="form-group">
-                    <label>Installer File</label>
-                    <input type="file" name="installer" accept=".exe,.msi,.dmg,.pkg,.deb,.rpm,.zip">
+                    <label>Installer File (Upload)</label>
+                    <input type="file" name="installer" accept=".exe,.msi,.dmg,.pkg,.deb,.rpm,.zip" id="installer_file" onchange="clearUrlField()">
                     <small class="text-muted">Max 500MB. Supported formats: .exe, .msi, .dmg, .pkg, .deb, .rpm, .zip</small>
                 </div>
+
+                <div class="form-group">
+                    <label>OR Installer URL (Link)</label>
+                    <input type="url" name="installer_url" id="installer_url" placeholder="https://example.com/installer.exe" onchange="clearFileField()">
+                    <small class="text-muted">Provide a direct link to the installer if not uploading a file</small>
+                </div>
+
+                <script>
+                    function clearUrlField() {
+                        if (document.getElementById('installer_file').value) {
+                            document.getElementById('installer_url').value = '';
+                        }
+                    }
+                    function clearFileField() {
+                        if (document.getElementById('installer_url').value) {
+                            document.getElementById('installer_file').value = '';
+                        }
+                    }
+                </script>
 
                 <div class="form-actions">
                     <button type="submit" class="btn btn-primary">Add Software</button>

@@ -65,6 +65,10 @@
                             <a href="{{ url_for('download_installer', software_id=sw.id) }}" class="btn-sm btn-secondary">
                                 📥 {{ sw.installer_filename }}
                             </a>
+                            {% elif sw.installer_url %}
+                            <a href="{{ sw.installer_url }}" target="_blank" class="btn-sm btn-secondary">
+                                🔗 Download Link
+                            </a>
                             {% else %}
                             <span class="text-muted">No installer</span>
                             {% endif %}

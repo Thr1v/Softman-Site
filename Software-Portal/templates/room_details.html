@@ -107,7 +107,7 @@
                                     {% if inst.is_long_life %}
                                     <span class="badge badge-info" title="{{ inst.long_life_reason }}">Exception</span>
                                     {% else %}
-                                    <button class="btn-sm btn-warning" onclick="setLongLife({{ inst.installation_id }}, '{{ inst.software_name }}')">Grant Exception</button>
+                                    <button class="btn-sm btn-warning" data-installation-id="{{ inst.installation_id }}" data-software-name="{{ inst.software_name }}" onclick="setLongLife(this.dataset.installationId, this.dataset.softwareName)">Grant Exception</button>
                                     {% endif %}
                                     <form method="post" action="{{ url_for('delete_installation', installation_id=inst.installation_id) }}" style="display:inline;" onsubmit="return confirm('Delete {{ inst.software_name }} installation?');">
                                         <button type="submit" class="btn-sm btn-danger">Delete</button>
