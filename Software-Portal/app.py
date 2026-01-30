@@ -6,9 +6,12 @@ from datetime import datetime
 import os
 from werkzeug.utils import secure_filename
 from functools import wraps
+from dotenv import load_dotenv
+
+load_dotenv()
 
 app = Flask(__name__)
-app.secret_key = 'your-secret-key-change-this-in-production'
+app.secret_key = os.getenv('app_secret')
 app.config['UPLOAD_FOLDER'] = 'installers'
 app.config['MAX_CONTENT_LENGTH'] = 500 * 1024 * 1024  # 500MB
 
