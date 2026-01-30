@@ -10,6 +10,10 @@
     <nav class="navbar">
         <div class="nav-brand">
             <h1>🖥️ SoftMAN</h1>
+            <span style="margin-left: 1rem; color: #666; font-size: 0.9rem;">
+                {{ current_user.username }}
+                {% if current_user.is_superuser %}<span class="badge badge-admin">Admin</span>{% endif %}
+            </span>
         </div>
         <ul class="nav-menu">
             <li><a href="{{ url_for('index') }}">Dashboard</a></li>
@@ -21,13 +25,7 @@
             <li><a href="{{ url_for('compliance_report') }}">Compliance</a></li>
             <li><a href="{{ url_for('users_list') }}">Users</a></li>
             {% endif %}
-            <li class="user-info">
-                {{ current_user.username }}
-                {% if current_user.is_superuser %}
-                <span class="badge badge-admin">Admin</span>
-                {% endif %}
-            </li>
-            <li><a href="{{ url_for('logout') }}" class="btn-sm btn-secondary">Logout</a></li>
+            <li><a href="{{ url_for('logout') }}">Logout</a></li>
         </ul>
     </nav>
 
@@ -39,7 +37,11 @@
             {% endif %}
         </div>
 
-        <div class="rooms-grid">
+        <div class="filters-section" style="margin-bottom: 1.5rem;">
+            <input type="text" id="roomSearch" placeholder="🔍 Search rooms by name, building, or floor..." style="width: 100%; padding: 0.75rem; border: 1px solid #ddd; border-radius: 8px; font-size: 1rem;" onkeyup="filterRooms()">
+        </div>
+
+        <div class="rooms-grid" id="roomsGrid">
             {% for room in rooms %}
             <div class="room-card">
                 <h3>{{ room.room_name }}</h3>
@@ -81,6 +83,23 @@
     </div>
 
     <script>
+        function filterRooms() {
+            const searchInput = document.getElementById('roomSearch').value.toLowerCase();
+            const roomCards = document.querySelectorAll('.room-card');
+            
+            roomCards.forEach(card => {
+                const roomName = card.querySelector('h3').textContent.toLowerCase();
+                const building = card.querySelector('p:nth-of-type(1)').textContent.toLowerCase();
+                const floor = card.querySelector('p:nth-of-type(2)').textContent.toLowerCase();
+                
+                if (roomName.includes(searchInput) || building.includes(searchInput) || floor.includes(searchInput)) {
+                    card.style.display = 'block';
+                } else {
+                    card.style.display = 'none';
+                }
+            });
+        }
+
         function showAddRoomModal() {
             document.getElementById('addRoomModal').style.display = 'block';
         }

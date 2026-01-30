@@ -10,6 +10,10 @@
     <nav class="navbar">
         <div class="nav-brand">
             <h1>🖥️ SoftMAN</h1>
+            <span style="margin-left: 1rem; color: #666; font-size: 0.9rem;">
+                {{ current_user.username }}
+                {% if current_user.is_superuser %}<span class="badge badge-admin">Admin</span>{% endif %}
+            </span>
         </div>
         <ul class="nav-menu">
             <li><a href="{{ url_for('index') }}">Dashboard</a></li>
@@ -21,13 +25,7 @@
             <li><a href="{{ url_for('compliance_report') }}">Compliance</a></li>
             <li><a href="{{ url_for('users_list') }}">Users</a></li>
             {% endif %}
-            <li class="user-info">
-                {{ current_user.username }}
-                {% if current_user.is_superuser %}
-                <span class="badge badge-admin">Admin</span>
-                {% endif %}
-            </li>
-            <li><a href="{{ url_for('logout') }}" class="btn-sm btn-secondary">Logout</a></li>
+            <li><a href="{{ url_for('logout') }}">Logout</a></li>
         </ul>
     </nav>
 
