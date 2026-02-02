@@ -167,7 +167,7 @@
                                     <button type="submit" class="btn-sm btn-success">Unarchive</button>
                                 </form>
                                 {% else %}
-                                <button onclick="toggleProductForm({{ vendor.id }})" class="btn-sm btn-outline">Add Product</button>
+                                <button onclick="toggleProductForm({{ vendor.id }})" class="btn-sm btn-outline">Add/Edit Products</button>
                                 <form method="post" action="{{ url_for('archive_vendor', vendor_id=vendor.id) }}" style="display:inline;" onsubmit="return confirmArchive('{{ vendor.vendor_name }}', {{ vendor.product_count }});">
                                     <button type="submit" class="btn-sm btn-warning">Archive</button>
                                 </form>
@@ -178,19 +178,20 @@
 
                     {% if current_user.is_superuser and not vendor.is_archived %}
                     <div id="product-form-{{ vendor.id }}" class="add-product-form">
-                        <form method="post" action="{{ url_for('add_product') }}">
+                        <form id="product-form-{{ vendor.id }}-form" method="post" action="{{ url_for('add_product') }}">
                             <input type="hidden" name="vendor_id" value="{{ vendor.id }}">
+                            <input type="hidden" id="product-id-{{ vendor.id }}" name="product_id" value="">
                             <div class="form-group">
                                 <label>Product Name *</label>
-                                <input type="text" name="product_name" required class="form-control">
+                                <input type="text" id="product-name-{{ vendor.id }}" name="product_name" required class="form-control">
                             </div>
                             <div class="form-group">
                                 <label>Description</label>
-                                <textarea name="description" class="form-control" rows="3"></textarea>
+                                <textarea id="product-description-{{ vendor.id }}" name="description" class="form-control" rows="3"></textarea>
                             </div>
                             <div class="form-buttons">
-                                <button type="submit" class="btn btn-primary">Add Product</button>
-                                <button type="button" onclick="toggleProductForm({{ vendor.id }})" class="btn btn-secondary">Cancel</button>
+                                <button type="submit" id="submit-btn-{{ vendor.id }}" class="btn btn-primary">Add Product</button>
+                                <button type="button" onclick="cancelProductForm({{ vendor.id }})" class="btn btn-secondary">Cancel</button>
                             </div>
                         </form>
                         
@@ -209,6 +210,9 @@
                                         {% endif %}
                                     </div>
                                     <div class="product-item-actions">
+                                        {% if not product.is_archived %}
+                                        <button type="button" class="btn-sm btn-outline" onclick="editProduct({{ vendor.id }}, {{ product.id }}, '{{ product.product_name|replace("'", "\\'") }}', '{{ product.description|replace("'", "\\'") }}')" title="Edit product">✏️</button>
+                                        {% endif %}
                                         {% if product.is_archived %}
                                         <form method="post" action="{{ url_for('unarchive_product', product_id=product.id) }}" style="display:inline;">
                                             <button type="submit" class="btn-sm btn-success" title="Unarchive product">↻</button>
@@ -240,6 +244,46 @@
         function toggleProductForm(vendorId) {
             const form = document.getElementById('product-form-' + vendorId);
             form.classList.toggle('show');
+            // Reset form to add mode when toggling
+            if (form.classList.contains('show')) {
+                resetProductForm(vendorId);
+            }
+        }
+
+        function resetProductForm(vendorId) {
+            const form = document.getElementById('product-form-' + vendorId + '-form');
+            form.action = '{{ url_for("add_product") }}';
+            document.getElementById('product-id-' + vendorId).value = '';
+            document.getElementById('product-name-' + vendorId).value = '';
+            document.getElementById('product-description-' + vendorId).value = '';
+            document.getElementById('submit-btn-' + vendorId).textContent = 'Add Product';
+            document.getElementById('submit-btn-' + vendorId).className = 'btn btn-primary';
+        }
+
+        function cancelProductForm(vendorId) {
+            const form = document.getElementById('product-form-' + vendorId);
+            form.classList.remove('show');
+            resetProductForm(vendorId);
+        }
+
+        function editProduct(vendorId, productId, productName, productDescription) {
+            // Show the form if it's hidden
+            const formContainer = document.getElementById('product-form-' + vendorId);
+            if (!formContainer.classList.contains('show')) {
+                formContainer.classList.add('show');
+            }
+            
+            // Populate form with product data
+            const form = document.getElementById('product-form-' + vendorId + '-form');
+            form.action = `/products/${productId}/edit`;
+            document.getElementById('product-id-' + vendorId).value = productId;
+            document.getElementById('product-name-' + vendorId).value = productName;
+            document.getElementById('product-description-' + vendorId).value = productDescription || '';
+            document.getElementById('submit-btn-' + vendorId).textContent = 'Update Product';
+            document.getElementById('submit-btn-' + vendorId).className = 'btn btn-success';
+            
+            // Scroll to form
+            formContainer.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
         }
 
         function confirmArchive(vendorName, productCount) {
