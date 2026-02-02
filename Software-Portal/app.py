@@ -363,6 +363,30 @@ def add_product():
     
     return redirect(url_for('vendors_list'))
 
+@app.route('/products/<int:product_id>/edit', methods=['POST'])
+@login_required
+@superuser_required
+def edit_product(product_id):
+    product_name = request.form['product_name']
+    description = request.form.get('description', '')
+    
+    conn = get_db()
+    cursor = conn.cursor()
+    try:
+        cursor.execute('''
+            UPDATE software_products 
+            SET product_name = ?, description = ? 
+            WHERE id = ?
+        ''', (product_name, description, product_id))
+        conn.commit()
+        flash(f'Product updated successfully!', 'success')
+    except sqlite3.IntegrityError:
+        flash('A product with this name already exists for this vendor!', 'error')
+    finally:
+        conn.close()
+    
+    return redirect(url_for('vendors_list'))
+
 @app.route('/products/<int:product_id>/archive', methods=['POST'])
 @login_required
 @superuser_required
