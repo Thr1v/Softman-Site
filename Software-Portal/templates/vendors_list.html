@@ -32,7 +32,61 @@
             display: none;
         }
         .add-product-form.show {
-            display: block;
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 1.5rem;
+        }
+        .add-product-form form {
+            display: flex;
+            flex-direction: column;
+            gap: 1rem;
+        }
+        .add-product-form textarea {
+            resize: none;
+            min-height: 60px;
+        }
+        .add-product-form .form-buttons {
+            display: flex;
+            gap: 0.5rem;
+        }
+        .existing-products {
+            border-left: 2px solid #ddd;
+            padding-left: 1.5rem;
+        }
+        .existing-products h4 {
+            margin-top: 0;
+            margin-bottom: 1rem;
+            color: #333;
+        }
+        .product-item {
+            padding: 0.75rem;
+            background: white;
+            border-radius: 5px;
+            margin-bottom: 0.5rem;
+            border-left: 3px solid #007bff;
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-start;
+        }
+        .product-item.archived {
+            opacity: 0.6;
+            border-left-color: #999;
+        }
+        .product-item-content {
+            flex: 1;
+        }
+        .product-item strong {
+            color: #007bff;
+        }
+        .product-item p {
+            margin: 0.25rem 0 0 0;
+            font-size: 0.9rem;
+            color: #666;
+        }
+        .product-item-actions {
+            margin-left: 1rem;
+            display: flex;
+            gap: 0.25rem;
         }
         .archive-toggle {
             margin-bottom: 1rem;
@@ -132,11 +186,45 @@
                             </div>
                             <div class="form-group">
                                 <label>Description</label>
-                                <textarea name="description" class="form-control" rows="2"></textarea>
+                                <textarea name="description" class="form-control" rows="3"></textarea>
                             </div>
-                            <button type="submit" class="btn btn-primary">Add Product</button>
-                            <button type="button" onclick="toggleProductForm({{ vendor.id }})" class="btn btn-secondary">Cancel</button>
+                            <div class="form-buttons">
+                                <button type="submit" class="btn btn-primary">Add Product</button>
+                                <button type="button" onclick="toggleProductForm({{ vendor.id }})" class="btn btn-secondary">Cancel</button>
+                            </div>
                         </form>
+                        
+                        <div class="existing-products">
+                            <h4>Existing Products ({{ vendor.product_count }})</h4>
+                            {% if vendor_products[vendor.id] %}
+                                {% for product in vendor_products[vendor.id] %}
+                                <div class="product-item{% if product.is_archived %} archived{% endif %}">
+                                    <div class="product-item-content">
+                                        <strong>{{ product.product_name }}</strong>
+                                        {% if product.is_archived %}
+                                        <span class="badge badge-secondary" style="font-size: 0.75rem; margin-left: 0.5rem;">Archived</span>
+                                        {% endif %}
+                                        {% if product.description %}
+                                        <p>{{ product.description }}</p>
+                                        {% endif %}
+                                    </div>
+                                    <div class="product-item-actions">
+                                        {% if product.is_archived %}
+                                        <form method="post" action="{{ url_for('unarchive_product', product_id=product.id) }}" style="display:inline;">
+                                            <button type="submit" class="btn-sm btn-success" title="Unarchive product">↻</button>
+                                        </form>
+                                        {% else %}
+                                        <form method="post" action="{{ url_for('archive_product', product_id=product.id) }}" style="display:inline;" onsubmit="return confirmProductArchive('{{ product.product_name }}');">
+                                            <button type="submit" class="btn-sm btn-warning" title="Archive product">📦</button>
+                                        </form>
+                                        {% endif %}
+                                    </div>
+                                </div>
+                                {% endfor %}
+                            {% else %}
+                                <p style="color: #999; font-style: italic;">No products yet. Add your first product!</p>
+                            {% endif %}
+                        </div>
                     </div>
                     {% endif %}
                 </div>
@@ -160,6 +248,13 @@
                           `• ${productCount} product(s)\n` +
                           `• All versions under these products\n\n` +
                           `The vendor can be unarchived later if needed.\n\n` +
+                          `⚠️ This action cannot be performed if there are active installations or pending assignments.`;
+            return confirm(message);
+        }
+
+        function confirmProductArchive(productName) {
+            const message = `Archive product "${productName}"?\n\n` +
+                          `This will hide the product from active lists.\n\n` +
                           `⚠️ This action cannot be performed if there are active installations or pending assignments.`;
             return confirm(message);
         }

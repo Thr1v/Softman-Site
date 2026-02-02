@@ -231,8 +231,20 @@ def vendors_list():
         ''')
     
     vendors = cursor.fetchall()
+    
+    # Get products for each vendor
+    vendor_products = {}
+    for vendor in vendors:
+        cursor.execute('''
+            SELECT id, product_name, description, is_archived
+            FROM software_products
+            WHERE vendor_id = ?
+            ORDER BY is_archived, product_name
+        ''', (vendor['id'],))
+        vendor_products[vendor['id']] = cursor.fetchall()
+    
     conn.close()
-    return render_template('vendors_list.html', vendors=vendors, show_archived=show_archived)
+    return render_template('vendors_list.html', vendors=vendors, vendor_products=vendor_products, show_archived=show_archived)
 
 @app.route('/vendors/add', methods=['GET', 'POST'])
 @login_required
@@ -349,6 +361,71 @@ def add_product():
     finally:
         conn.close()
     
+    return redirect(url_for('vendors_list'))
+
+@app.route('/products/<int:product_id>/archive', methods=['POST'])
+@login_required
+@superuser_required
+def archive_product(product_id):
+    conn = get_db()
+    cursor = conn.cursor()
+    
+    # Check if product has versions with active installations
+    cursor.execute('''
+        SELECT COUNT(DISTINCT i.id) as count
+        FROM installations i
+        JOIN software_versions sv ON i.version_id = sv.id
+        WHERE sv.product_id = ?
+    ''', (product_id,))
+    installation_count = cursor.fetchone()['count']
+    
+    # Check if product has active assignments
+    cursor.execute('''
+        SELECT COUNT(DISTINCT a.id) as count
+        FROM assignments a
+        JOIN software_versions sv ON a.version_id = sv.id
+        WHERE sv.product_id = ?
+        AND a.status != 'completed'
+    ''', (product_id,))
+    assignment_count = cursor.fetchone()['count']
+    
+    if installation_count > 0 or assignment_count > 0:
+        flash(f'Cannot archive product: {installation_count} active installation(s) and {assignment_count} pending assignment(s). '
+              f'Please remove all installations and complete assignments before archiving.', 'error')
+    else:
+        cursor.execute('''
+            UPDATE software_products 
+            SET is_archived = 1, archived_at = CURRENT_TIMESTAMP 
+            WHERE id = ?
+        ''', (product_id,))
+        conn.commit()
+        
+        cursor.execute('SELECT product_name FROM software_products WHERE id = ?', (product_id,))
+        product_name = cursor.fetchone()['product_name']
+        flash(f'Product "{product_name}" archived successfully!', 'success')
+    
+    conn.close()
+    return redirect(url_for('vendors_list'))
+
+@app.route('/products/<int:product_id>/unarchive', methods=['POST'])
+@login_required
+@superuser_required
+def unarchive_product(product_id):
+    conn = get_db()
+    cursor = conn.cursor()
+    
+    cursor.execute('''
+        UPDATE software_products 
+        SET is_archived = 0, archived_at = NULL 
+        WHERE id = ?
+    ''', (product_id,))
+    conn.commit()
+    
+    cursor.execute('SELECT product_name FROM software_products WHERE id = ?', (product_id,))
+    product_name = cursor.fetchone()['product_name']
+    flash(f'Product "{product_name}" unarchived successfully!', 'success')
+    
+    conn.close()
     return redirect(url_for('vendors_list'))
 
 @app.route('/compliance')
