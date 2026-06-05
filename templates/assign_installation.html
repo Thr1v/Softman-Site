@@ -1,0 +1,92 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Assign Installation - SoftMAN</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+    <nav class="navbar">
+        <div class="nav-brand">
+            <h1>🖥️ SoftMAN</h1>
+            <span style="margin-left: 1rem; color: #666; font-size: 0.9rem;">
+                {{ current_user.username }}
+                {% if current_user.is_superuser %}<span class="badge badge-admin">Admin</span>{% endif %}
+            </span>
+        </div>
+        <ul class="nav-menu">
+            <li><a href="{{ url_for('index') }}">Dashboard</a></li>
+            <li><a href="{{ url_for('software_list') }}">Software</a></li>
+            <li><a href="{{ url_for('vendors_list') }}">Vendors</a></li>
+            <li><a href="{{ url_for('rooms_list') }}">Rooms</a></li>
+            <li><a href="{{ url_for('my_assignments') }}">{% if current_user.is_superuser %}Assignments{% else %}My Assignments{% endif %}{% if pending_assignments_count > 0 %}<span class="notification-badge">{{ pending_assignments_count }}</span>{% endif %}</a></li>
+            {% if current_user.is_superuser %}
+            <li><a href="{{ url_for('compliance_report') }}">Compliance</a></li>
+            <li><a href="{{ url_for('users_list') }}">Users</a></li>
+            {% endif %}
+            <li><a href="{{ url_for('logout') }}">Logout</a></li>
+        </ul>
+    </nav>
+
+    <div class="container">
+        <div class="page-header">
+            <h2>📤 Assign Software Installation</h2>
+        </div>
+
+        <div class="form-container">
+            <form method="post" class="software-form">
+                <div class="form-group">
+                    <label>Software Versions (select one or more) *</label>
+                    <div style="max-height: 300px; overflow-y: auto; border: 1px solid #ddd; padding: 1rem; border-radius: 4px;">
+                        {% for sw in software_list %}
+                        <div style="margin-bottom: 0.5rem;">
+                            <label style="display: flex; align-items: center; cursor: pointer;">
+                                <input type="checkbox" name="version_ids" value="{{ sw.id }}" style="margin-right: 0.5rem;">
+                                <span>{{ sw.vendor_name }} - {{ sw.product_name }} (v{{ sw.version }}){% if sw.is_latest %} <strong style="color: #28a745;">Latest</strong>{% endif %}</span>
+                            </label>
+                        </div>
+                        {% endfor %}
+                    </div>
+                    <small>Select software versions to install. Latest versions are marked.</small>
+                </div>
+                    <div class="form-group">
+                        <label>Assign To *</label>
+                        <select name="assigned_to" required>
+                            <option value="">Select User...</option>
+                            {% for user in users %}
+                            <option value="{{ user.id }}">{{ user.username }}{% if user.full_name %} ({{ user.full_name }}){% endif %}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                </div>
+
+                <div class="form-group">
+                    <label>Rooms (hold Ctrl/Cmd to select multiple) *</label>
+                    <select name="room_ids" multiple required size="6" style="height: auto;">
+                        {% for room in rooms %}
+                        <option value="{{ room.id }}">{{ room.room_name }}</option>
+                        {% endfor %}
+                    </select>
+                    <small>Select one or more rooms for installation</small>
+                </div>
+
+                <div class="form-group">
+                    <label>Due Date</label>
+                    <input type="date" name="due_date">
+                </div>
+
+                <div class="form-group">
+                    <label>Notes/Instructions</label>
+                    <textarea name="notes" rows="3" placeholder="Any special instructions for the installation..."></textarea>
+                </div>
+
+                <div class="form-actions">
+                    <button type="submit" class="btn btn-primary">Assign Installation</button>
+                    <a href="{{ url_for('index') }}" class="btn btn-secondary">Cancel</a>
+                </div>
+            </form>
+        </div>
+    </div>
+</body>
+</html>

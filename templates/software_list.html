@@ -1,0 +1,99 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Software List - SoftMAN</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+    <nav class="navbar">
+        <div class="nav-brand">
+            <h1>🖥️ SoftMAN</h1>
+            <span style="margin-left: 1rem; color: #666; font-size: 0.9rem;">
+                {{ current_user.username }}
+                {% if current_user.is_superuser %}<span class="badge badge-admin">Admin</span>{% endif %}
+            </span>
+        </div>
+        <ul class="nav-menu">
+            <li><a href="{{ url_for('index') }}">Dashboard</a></li>
+            <li><a href="{{ url_for('software_list') }}" class="active">Software</a></li>
+            <li><a href="{{ url_for('vendors_list') }}">Vendors</a></li>
+            <li><a href="{{ url_for('rooms_list') }}">Rooms</a></li>
+            <li><a href="{{ url_for('my_assignments') }}">{% if current_user.is_superuser %}Assignments{% else %}My Assignments{% endif %}{% if pending_assignments_count > 0 %}<span class="notification-badge">{{ pending_assignments_count }}</span>{% endif %}</a></li>
+            {% if current_user.is_superuser %}
+            <li><a href="{{ url_for('compliance_report') }}">Compliance</a></li>
+            <li><a href="{{ url_for('users_list') }}">Users</a></li>
+            {% endif %}
+            <li><a href="{{ url_for('logout') }}">Logout</a></li>
+        </ul>
+    </nav>
+
+    <div class="container">
+        <div class="page-header">
+            <h2>Software Catalog</h2>
+            <div>
+                <a href="{{ url_for('vendors_list') }}" class="btn btn-secondary">Manage Vendors</a>
+                <a href="{{ url_for('add_software') }}" class="btn btn-primary">➕ Add Software Version</a>
+            </div>
+        </div>
+
+        <div class="table-container">
+            <table class="data-table">
+                <thead>
+                    <tr>
+                        <th>Vendor</th>
+                        <th>Product</th>
+                        <th>Version</th>
+                        <th>Latest</th>
+                        <th>License Type</th>
+                        <th>Installations</th>
+                        <th>Installer</th>
+                        <th>Actions</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for sw in software %}
+                    <tr>
+                        <td>{{ sw.vendor_name }}</td>
+                        <td><strong>{{ sw.product_name }}</strong></td>
+                        <td>{{ sw.version }}</td>
+                        <td>
+                            {% if sw.is_latest %}
+                            <span class="badge badge-success">✓ Latest</span>
+                            {% else %}
+                            <span class="badge badge-secondary">Older</span>
+                            {% endif %}
+                        </td>
+                        <td>{{ sw.license_type or 'N/A' }}</td>
+                        <td>{{ sw.installation_count }}</td>
+                        <td>
+                            {% if sw.installer_filename %}
+                            <a href="{{ url_for('download_installer', version_id=sw.version_id) }}" class="btn-sm btn-secondary">
+                                📥 {{ sw.installer_filename }}
+                            </a>
+                            {% elif sw.installer_url %}
+                            <a href="{{ sw.installer_url }}" target="_blank" class="btn-sm btn-secondary">
+                                🔗 Download Link
+                            </a>
+                            {% else %}
+                            <span class="text-muted">No installer</span>
+                            {% endif %}
+                        </td>
+                        <td>
+                            {% if current_user.is_superuser %}
+                            <form method="post" action="{{ url_for('delete_software', version_id=sw.version_id) }}" style="display:inline;" onsubmit="return confirm('Delete {{ sw.product_name }} v{{ sw.version }}? This will fail if installations exist.');">
+                                <button type="submit" class="btn-sm btn-danger">Delete</button>
+                            </form>
+                            {% else %}
+                            <span class="text-muted">-</span>
+                            {% endif %}
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</body>
+</html>
