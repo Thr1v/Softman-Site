@@ -1,0 +1,118 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Rooms - SoftMAN</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+    <nav class="navbar">
+        <div class="nav-brand">
+            <h1>🖥️ SoftMAN</h1>
+            <span style="margin-left: 1rem; color: #666; font-size: 0.9rem;">
+                {{ current_user.username }}
+                {% if current_user.is_superuser %}<span class="badge badge-admin">Admin</span>{% endif %}
+            </span>
+        </div>
+        <ul class="nav-menu">
+            <li><a href="{{ url_for('index') }}">Dashboard</a></li>
+            <li><a href="{{ url_for('software_list') }}">Software</a></li>
+            <li><a href="{{ url_for('vendors_list') }}">Vendors</a></li>
+            <li><a href="{{ url_for('rooms_list') }}" class="active">Rooms</a></li>
+            <li><a href="{{ url_for('my_assignments') }}">{% if current_user.is_superuser %}Assignments{% else %}My Assignments{% endif %}{% if pending_assignments_count > 0 %}<span class="notification-badge">{{ pending_assignments_count }}</span>{% endif %}</a></li>
+            {% if current_user.is_superuser %}
+            <li><a href="{{ url_for('compliance_report') }}">Compliance</a></li>
+            <li><a href="{{ url_for('users_list') }}">Users</a></li>
+            {% endif %}
+            <li><a href="{{ url_for('logout') }}">Logout</a></li>
+        </ul>
+    </nav>
+
+    <div class="container">
+        <div class="page-header">
+            <h2>Rooms & Locations</h2>
+            {% if current_user.is_superuser %}
+            <button class="btn btn-primary" onclick="showAddRoomModal()">➕ Add New Room</button>
+            {% endif %}
+        </div>
+
+        <div class="filters-section" style="margin-bottom: 1.5rem;">
+            <input type="text" id="roomSearch" placeholder="🔍 Search rooms by name, building, or floor..." style="width: 100%; padding: 0.75rem; border: 1px solid #ddd; border-radius: 8px; font-size: 1rem;" onkeyup="filterRooms()">
+        </div>
+
+        <div class="rooms-grid" id="roomsGrid">
+            {% for room in rooms %}
+            <div class="room-card">
+                <h3>{{ room.room_name }}</h3>
+                <p><strong>Building:</strong> {{ room.building or 'N/A' }}</p>
+                <p><strong>Floor:</strong> {{ room.floor or 'N/A' }}</p>
+                <p><strong>Software Installed:</strong> {{ room.software_count }}</p>
+                <a href="{{ url_for('room_details', room_id=room.id) }}" class="btn-sm btn-primary">View Installations</a>
+                {% if current_user.is_superuser %}
+                <form method="post" action="{{ url_for('delete_room', room_id=room.id) }}" style="display:inline; margin-left:8px;" onsubmit="return confirm('Delete {{ room.room_name }}? This will fail if installations exist.');">
+                    <button type="submit" class="btn-sm btn-danger">Delete</button>
+                </form>
+                {% endif %}
+            </div>
+            {% endfor %}
+        </div>
+    </div>
+
+    <!-- Add Room Modal -->
+    <div id="addRoomModal" class="modal">
+        <div class="modal-content">
+            <span class="close" onclick="closeModal('addRoomModal')">&times;</span>
+            <h2>Add New Room</h2>
+            <form method="post" action="{{ url_for('add_room') }}">
+                <div class="form-group">
+                    <label>Room Name *</label>
+                    <input type="text" name="room_name" required placeholder="e.g., Lab 101">
+                </div>
+                <div class="form-group">
+                    <label>Building</label>
+                    <input type="text" name="building" placeholder="e.g., Main Building">
+                </div>
+                <div class="form-group">
+                    <label>Floor</label>
+                    <input type="text" name="floor" placeholder="e.g., 1st Floor">
+                </div>
+                <button type="submit" class="btn btn-primary">Add Room</button>
+            </form>
+        </div>
+    </div>
+
+    <script>
+        function filterRooms() {
+            const searchInput = document.getElementById('roomSearch').value.toLowerCase();
+            const roomCards = document.querySelectorAll('.room-card');
+            
+            roomCards.forEach(card => {
+                const roomName = card.querySelector('h3').textContent.toLowerCase();
+                const building = card.querySelector('p:nth-of-type(1)').textContent.toLowerCase();
+                const floor = card.querySelector('p:nth-of-type(2)').textContent.toLowerCase();
+                
+                if (roomName.includes(searchInput) || building.includes(searchInput) || floor.includes(searchInput)) {
+                    card.style.display = 'block';
+                } else {
+                    card.style.display = 'none';
+                }
+            });
+        }
+
+        function showAddRoomModal() {
+            document.getElementById('addRoomModal').style.display = 'block';
+        }
+
+        function closeModal(modalId) {
+            document.getElementById(modalId).style.display = 'none';
+        }
+
+        window.onclick = function(event) {
+            if (event.target.classList.contains('modal')) {
+                event.target.style.display = 'none';
+            }
+        }
+    </script>
+</body>
+</html>

@@ -1,0 +1,13 @@
+.env
+__pycache__/
+.pytest_cache/
+*.pyc
+
+*.db
+*.sql
+*.zip
+*.exe
+
+installers/
+backups/
+logs/
